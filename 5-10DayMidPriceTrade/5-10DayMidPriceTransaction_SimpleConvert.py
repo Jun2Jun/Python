@@ -27,7 +27,9 @@ input_sell_on = True
 input_friday_on = True
 
 # 共通変数
-lot_size = DEFAULT_LOT_SIZE
+LotSize = DEFAULT_LOT_SIZE
+OrderId = 0 # エントリ時に返却される注文ID
+PositionId = 0 # 決済に使用するポジションID (約定情報からOrderIdをキーに取得する)
 
 # スプレッドの判定
 def is_spread_ok() -> bool:
@@ -101,12 +103,14 @@ def position_count(trade_action):
     return 0
 
 # ポジションオープン
-def position_entry(trade_action):
+# 戻り値：注文ID(orderId)
+def position_entry(trade_action) -> int:
+    global LotSize
     # ロットの計算
     if LOT_OPTIMIZE:
-        lot_size = lot_optimize()
-    if lot_size > MAX_LOT_SIZE:
-        lot_size = MAX_LOT_SIZE
+        LotSize = lot_optimize()
+    if LotSize > MAX_LOT_SIZE:
+        LotSize = MAX_LOT_SIZE
 
     # エントリ
     timestamp = '{0}000'.format(int(time.mktime(datetime.now().timetuple())))
@@ -116,7 +120,7 @@ def position_entry(trade_action):
     reqBody = {
         "symbol": PAIR,
         "side": trade_action,
-        "size": str(lot_size),
+        "size": str(LotSize),
         "clientOrderId": EA_NAME,
         "executionType": "MARKET"
     }
@@ -133,23 +137,26 @@ def position_entry(trade_action):
     res = requests.post(endPoint + path, headers=headers, data=json.dumps(reqBody))
     print (json.dumps(res.json(), indent=2))
 
+    order_id = res.json()['data'][0]['orderId']
+    return order_id
+
 # ポジションクローズ
 def position_close(trade_action):
     timestamp = '{0}000'.format(int(time.mktime(datetime.now().timetuple())))
     method    = 'POST'
     endPoint  = 'https://forex-api.coin.z.com/private'
-    path      = '/v1/cancelBulkOrder'
+    path      = '/v1/closeOrder'
     reqBody = {
-        "symbols": PAIR,
+        "symbol": PAIR,
         "side": trade_action,
         "clientOrderId": EA_NAME,
         "executionType": "MARKET",
         "settlePosition": [
         {
-            "positionId": 12066844,
-            "size": str(lot_size)
+            "positionId": PositionId,
+            "size": str(LotSize)
         }
-    ]
+        ]
     }
 
     text = timestamp + method + path + json.dumps(reqBody)
@@ -163,6 +170,32 @@ def position_close(trade_action):
 
     res = requests.post(endPoint + path, headers=headers, data=json.dumps(reqBody))
     print (json.dumps(res.json(), indent=2))
+
+# OrderIdからpositionIdを取得する
+# 戻り値：positionId
+def get_position_id() -> int:
+    timestamp = '{0}000'.format(int(time.mktime(datetime.now().timetuple())))
+    method    = 'GET'
+    endPoint  = 'https://forex-api.coin.z.com/private'
+    path      = '/v1/executions'
+
+    text = timestamp + method + path
+    sign = hmac.new(bytes(API_SECRET.encode('ascii')), bytes(text.encode('ascii')), hashlib.sha256).hexdigest()
+    parameters = {
+        "orderId": OrderId
+    }
+
+    headers = {
+        "API-KEY": API_KEY,
+        "API-TIMESTAMP": timestamp,
+        "API-SIGN": sign
+    }
+
+    res = requests.get(endPoint + path, headers=headers, params=parameters)
+    print (json.dumps(res.json(), indent=2))
+
+    position_id = res.json()['data']['list'][0]['positionId']
+    return position_id
 
 def is_nenmatu_nensi():
     # Placeholder: Check if it's end-of-year period when trading should be avoided
@@ -271,8 +304,10 @@ def is_friday() -> bool:
     return False
 
 # テスト用のコード
-# position_entry("SELL")
-position_close("BUY")
+# OrderId = position_entry("SELL")
+OrderId = 12078666
+position_id = get_position_id()
+# position_close("BUY")
 
 # メインの処理　1秒毎に売買の判定処理を行う
 while True:

@@ -2,7 +2,7 @@
 *
 # ディレクトリは無視しない
 !SpreadToCSV/
+!5-10DayMidPriceTrade
 # .py, .batファイルは追跡対象にする
 !*.py
 !*.bat
-!*.gitignore

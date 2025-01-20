@@ -1,16 +1,24 @@
-import requests
-
-# 5-10日のトレード
 from enum import Enum
-import datetime
+from datetime import datetime
+import hashlib
+import hmac
+import json
+import requests
+import sys
 import time
 
 # Constants for trade settings
-MAGIC_NUMBER = 1115111
+API_LABEL = "gmo-fx-api"
+API_KEY = "OOkd+TEJxLY3DIEzX9x7eDMfQAMyUdcI"
+API_SECRET = "iL14cy0Z7txQfEQsuetvZ0VL2gF96ZwlpR1P3FpFB6jkfMw/Z52b0maM27stIgc4"
+EA_NAME = "FiveTenDayMidPriceTransaction"
+LOT_OPTIMIZE = True # ロットサイズの最適化実施フラグ
+DEFAULT_LOT_SIZE = 10000 # デフォルトのロットサイズ
+MAX_LOT_SIZE = 500000 # 最大ロットサイズ
+LIVERRAGE = 25 # リバレッジ
+PAIR = "USD_JPY" # "通貨ペア"
 SLIPPAGE = 10
 SPREAD_LIMIT = 0.003
-LOT_SIZE = 0.1
-HUKURI_ON = True
 
 # 各種フラグ
 buy_entry_on = True
@@ -18,38 +26,13 @@ sell_entry_on = True
 input_sell_on = True
 input_friday_on = True
 
-# 売買の列挙型を定義
-class TradeAction(Enum):
-    BUY = 0
-    SELL = 1
-
-# Time Calculation Enum Equivalent in Python
-class UseTimes:
-    GMT9 = 0
-    GMT9_BACKTEST = 1
-    GMT_KOTEI = 2
-
-set_time = UseTimes.GMT9
-natu = 6  # Summer time
-huyu = 7  # Winter time
-
-# Time calculation function
-def calculate_time(current_time):
-    if set_time == UseTimes.GMT9:
-        return current_time + datetime.timedelta(hours=9)
-    elif set_time == UseTimes.GMT9_BACKTEST:
-        return current_time  # In a backtest scenario, actual time adjustments may be different
-    elif set_time == UseTimes.GMT_KOTEI:
-        return current_time + datetime.timedelta(hours=9)
-    return current_time
+# 共通変数
+lot_size = DEFAULT_LOT_SIZE
 
 # スプレッドの判定
 def is_spread_ok() -> bool:
     # GMOコインの全データを取得するPublic APIのURL
     ticker_url = "https://forex-api.coin.z.com/public/v1/ticker"
-
-    # 取得する通貨ペア
-    pair = "USD_JPY"
 
     try:
         # APIリクエスト
@@ -60,7 +43,7 @@ def is_spread_ok() -> bool:
         for list in data.items():
             if list[0] == "data":
                 for item in list[1]:
-                    if item['symbol'] == pair:
+                    if item['symbol'] == PAIR:
                         # スプレッドの計算
                         spread = round(float(item['ask']) - float(item['bid']), 3)
                         # スプレッドが許容内か判定する
@@ -71,20 +54,115 @@ def is_spread_ok() -> bool:
     
     return False
 
+# 価格の取得 Ask
+def get_price() -> float:
+    # GMOコインの全データを取得するPublic APIのURL
+    ticker_url = "https://forex-api.coin.z.com/public/v1/ticker"
+
+    try:
+        # APIリクエスト
+        response = requests.get(f"{ticker_url}")
+        data = response.json()
+
+        # データを抽出
+        for list in data.items():
+            if list[0] == "data":
+                for item in list[1]:
+                    if item['symbol'] == PAIR:
+                        return round(float(item['ask']), 3)
+    except Exception as e:
+        print(f"Error: {e}")
+    
+    return sys.float_info.max
+
+# ロットの最適化処理
+def lot_optimize() -> int:
+    # 残高の取得
+    timestamp = '{0}000'.format(int(time.mktime(datetime.now().timetuple())))
+    method    = 'GET'
+    endPoint  = 'https://forex-api.coin.z.com/private'
+    path      = '/v1/account/assets'
+
+    text = timestamp + method + path
+    sign = hmac.new(bytes(API_SECRET.encode('ascii')), bytes(text.encode('ascii')), hashlib.sha256).hexdigest()
+
+    headers = {
+        "API-KEY": API_KEY,
+        "API-TIMESTAMP": timestamp,
+        "API-SIGN": sign
+    }
+
+    res = requests.get(endPoint + path, headers=headers)
+    amount = int(res.json()['data']['availableAmount'])
+
+    return int(amount * LIVERRAGE / (get_price() * DEFAULT_LOT_SIZE)) * DEFAULT_LOT_SIZE
+
 def position_count(trade_action):
     return 0
 
+# ポジションオープン
 def position_entry(trade_action):
-    if trade_action == TradeAction.BUY:
-        print("Buying position opened")
-    else:
-        print("Selling position opened")
+    # ロットの計算
+    if LOT_OPTIMIZE:
+        lot_size = lot_optimize()
+    if lot_size > MAX_LOT_SIZE:
+        lot_size = MAX_LOT_SIZE
 
+    # エントリ
+    timestamp = '{0}000'.format(int(time.mktime(datetime.now().timetuple())))
+    method    = 'POST'
+    endPoint  = 'https://forex-api.coin.z.com/private'
+    path      = '/v1/order'
+    reqBody = {
+        "symbol": PAIR,
+        "side": trade_action,
+        "size": str(lot_size),
+        "clientOrderId": EA_NAME,
+        "executionType": "MARKET"
+    }
+
+    text = timestamp + method + path + json.dumps(reqBody)
+    sign = hmac.new(bytes(API_SECRET.encode('ascii')), bytes(text.encode('ascii')), hashlib.sha256).hexdigest()
+
+    headers = {
+        "API-KEY": API_KEY,
+        "API-TIMESTAMP": timestamp,
+        "API-SIGN": sign
+    }
+
+    res = requests.post(endPoint + path, headers=headers, data=json.dumps(reqBody))
+    print (json.dumps(res.json(), indent=2))
+
+# ポジションクローズ
 def position_close(trade_action):
-    if trade_action == TradeAction.BUY:
-        print("Buying position closed")
-    else:
-        print("Selling position closed")
+    timestamp = '{0}000'.format(int(time.mktime(datetime.now().timetuple())))
+    method    = 'POST'
+    endPoint  = 'https://forex-api.coin.z.com/private'
+    path      = '/v1/cancelBulkOrder'
+    reqBody = {
+        "symbols": PAIR,
+        "side": trade_action,
+        "clientOrderId": EA_NAME,
+        "executionType": "MARKET",
+        "settlePosition": [
+        {
+            "positionId": 12066844,
+            "size": str(lot_size)
+        }
+    ]
+    }
+
+    text = timestamp + method + path + json.dumps(reqBody)
+    sign = hmac.new(bytes(API_SECRET.encode('ascii')), bytes(text.encode('ascii')), hashlib.sha256).hexdigest()
+
+    headers = {
+        "API-KEY": API_KEY,
+        "API-TIMESTAMP": timestamp,
+        "API-SIGN": sign
+    }
+
+    res = requests.post(endPoint + path, headers=headers, data=json.dumps(reqBody))
+    print (json.dumps(res.json(), indent=2))
 
 def is_nenmatu_nensi():
     # Placeholder: Check if it's end-of-year period when trading should be avoided
@@ -192,6 +270,10 @@ def is_friday() -> bool:
 
     return False
 
+# テスト用のコード
+# position_entry("SELL")
+position_close("BUY")
+
 # メインの処理　1秒毎に売買の判定処理を行う
 while True:
     current_time = datetime.datetime.now()
@@ -202,25 +284,25 @@ while True:
         sell_entry_on = True
 
     # 買いの判定
-    if is_buy() and is_spread_ok() and position_count(TradeAction.BUY) < 1 and buy_entry_on and not is_nenmatu_nensi():
-        position_entry(TradeAction.BUY)
+    if is_buy() and is_spread_ok() and position_count("BUY") < 1 and buy_entry_on and not is_nenmatu_nensi():
+        position_entry("BUY")
 
     # 売りの判定
     if input_sell_on:
-        if is_sell() and is_spread_ok() and position_count(TradeAction.SELL) < 1 and sell_entry_on and not is_nenmatu_nensi():
-            position_entry(TradeAction.SELL)
+        if is_sell() and is_spread_ok() and position_count("SELL") < 1 and sell_entry_on and not is_nenmatu_nensi():
+            position_entry("SELL")
 
     # Closing positions if conditions are no longer met
-    if not is_buy() and is_spread_ok() and position_count(TradeAction.BUY) > 0:
-        position_close(TradeAction.BUY)
+    if not is_buy() and is_spread_ok() and position_count("BUY") > 0:
+        position_close("BUY")
 
-    if not is_sell() and is_spread_ok() and position_count(TradeAction.SELL) > 0:
-        position_close(TradeAction.SELL)
+    if not is_sell() and is_spread_ok() and position_count("SELL") > 0:
+        position_close("SELL")
 
     # Update entry flags based on current position counts
-    if position_count(TradeAction.BUY) > 0:
+    if position_count("BUY") > 0:
         buy_entry_on = False
-    if position_count(TradeAction.SELL) > 0:
+    if position_count("SELL") > 0:
         sell_entry_on = False
 
     time.sleep(1)

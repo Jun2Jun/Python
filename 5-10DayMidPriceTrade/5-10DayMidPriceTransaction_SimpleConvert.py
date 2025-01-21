@@ -77,7 +77,7 @@ def get_price() -> float:
     
     return sys.float_info.max
 
-# ロットの最適化処理
+# ロットの計算処理
 def lot_optimize() -> int:
     # 残高の取得
     timestamp = '{0}000'.format(int(time.mktime(datetime.now().timetuple())))
@@ -99,8 +99,34 @@ def lot_optimize() -> int:
 
     return int(amount * LIVERRAGE / (get_price() * DEFAULT_LOT_SIZE)) * DEFAULT_LOT_SIZE
 
-def position_count(trade_action):
-    return 0
+# OrderIdをキーにポジションの有無を判定
+def have_position(side) -> bool:
+    timestamp = '{0}000'.format(int(time.mktime(datetime.now().timetuple())))
+    method    = 'GET'
+    endPoint  = 'https://forex-api.coin.z.com/private'
+    path      = '/v1/executions'
+
+    text = timestamp + method + path
+    sign = hmac.new(bytes(API_SECRET.encode('ascii')), bytes(text.encode('ascii')), hashlib.sha256).hexdigest()
+    parameters = {
+        "orderId": OrderId
+    }
+
+    headers = {
+        "API-KEY": API_KEY,
+        "API-TIMESTAMP": timestamp,
+        "API-SIGN": sign
+    }
+
+    res = requests.get(endPoint + path, headers=headers, params=parameters)
+    print (json.dumps(res.json(), indent=2))
+
+    # 成功？
+    if res.json()['status'] == 0:
+        if len(res.json()['data']['list']) > 0:
+            if res.json()['data']['list'][0]['positionId'] > 0 and res.json()['data']['list'][0]['side'] == side:
+                return True
+    return False
 
 # ポジションオープン
 # 戻り値：注文ID(orderId)
@@ -137,11 +163,14 @@ def position_entry(trade_action) -> int:
     res = requests.post(endPoint + path, headers=headers, data=json.dumps(reqBody))
     print (json.dumps(res.json(), indent=2))
 
-    order_id = res.json()['data'][0]['orderId']
-    return order_id
+    # 成功？
+    if res.json()['status'] == 0:
+        return res.json()['data'][0]['orderId']
+    else:
+        return -1
 
 # ポジションクローズ
-def position_close(trade_action):
+def position_close(trade_action) -> bool:
     timestamp = '{0}000'.format(int(time.mktime(datetime.now().timetuple())))
     method    = 'POST'
     endPoint  = 'https://forex-api.coin.z.com/private'
@@ -171,6 +200,12 @@ def position_close(trade_action):
     res = requests.post(endPoint + path, headers=headers, data=json.dumps(reqBody))
     print (json.dumps(res.json(), indent=2))
 
+    # 成功？
+    if res.json()['status'] == 0:
+        return True
+    else:
+        return False
+
 # OrderIdからpositionIdを取得する
 # 戻り値：positionId
 def get_position_id() -> int:
@@ -194,12 +229,19 @@ def get_position_id() -> int:
     res = requests.get(endPoint + path, headers=headers, params=parameters)
     print (json.dumps(res.json(), indent=2))
 
-    position_id = res.json()['data']['list'][0]['positionId']
-    return position_id
+    # 成功？
+    if res.json()['status'] == 0:
+        return res.json()['data']['list'][0]['positionId']
+    else:
+        return 0
 
-def is_nenmatu_nensi():
-    # Placeholder: Check if it's end-of-year period when trading should be avoided
-    return False
+def is_nenmatu_nensi() -> bool:
+    pc_time = datetime.now()
+    
+    nenmatu = pc_time.month == 12 and pc_time.day >= 25
+    nensi = pc_time.month == 1 and pc_time.day <= 6
+
+    return nenmatu or nensi
 
 # 買いの判定
 def is_buy() -> bool:
@@ -304,10 +346,13 @@ def is_friday() -> bool:
     return False
 
 # テスト用のコード
+nenmatu = is_nenmatu_nensi()
 # OrderId = position_entry("SELL")
-OrderId = 12078666
-position_id = get_position_id()
+#OrderId = 12093313
+#have_position()
+# PositionId = get_position_id()
 # position_close("BUY")
+
 
 # メインの処理　1秒毎に売買の判定処理を行う
 while True:
@@ -318,26 +363,27 @@ while True:
         buy_entry_on = True
         sell_entry_on = True
 
-    # 買いの判定
-    if is_buy() and is_spread_ok() and position_count("BUY") < 1 and buy_entry_on and not is_nenmatu_nensi():
-        position_entry("BUY")
+    # ポジションエントリの判定
+    if is_buy() and is_spread_ok() and not have_position("BUY") and buy_entry_on and not is_nenmatu_nensi():
+        # 買いのエントリを行う
+        OrderId = position_entry("BUY")
 
-    # 売りの判定
     if input_sell_on:
-        if is_sell() and is_spread_ok() and position_count("SELL") < 1 and sell_entry_on and not is_nenmatu_nensi():
-            position_entry("SELL")
+        if is_sell() and is_spread_ok() and not have_position("SELL") and sell_entry_on and not is_nenmatu_nensi():
+            # 売りのエントリを行う
+            OrderId = position_entry("SELL")
 
-    # Closing positions if conditions are no longer met
-    if not is_buy() and is_spread_ok() and position_count("BUY") > 0:
+    # ポジションクローズの判定
+    if not is_buy() and is_spread_ok() and have_position("BUY"):
         position_close("BUY")
 
-    if not is_sell() and is_spread_ok() and position_count("SELL") > 0:
+    if not is_sell() and is_spread_ok() and have_position("SELL"):
         position_close("SELL")
 
-    # Update entry flags based on current position counts
-    if position_count("BUY") > 0:
+    # ポジションを確認して、buy_entory_on、sell_entory_onを更新する
+    if have_position("BUY"):
         buy_entry_on = False
-    if position_count("SELL") > 0:
+    if have_position("SELL"):
         sell_entry_on = False
 
     time.sleep(1)

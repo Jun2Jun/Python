@@ -286,64 +286,43 @@ def is_gotobi() -> bool:
 # 4:25～9:54だとtrueを返す
 # デフォルトでは5-10が木曜日の場合、falseを返す
 def is_buy_time() -> bool:
-    pc_time = datetime.datetime.now()
+    pc_time = datetime.now()
     hour = pc_time.hour
     minute = pc_time.minute
 
+    # 木曜日の場合はFalseを返す
     if pc_time.strftime('%A') == 'Thursday':
         return False
-    
+
+    # 4:25以降はTrueを返す
     if hour == 4 and minute > 24:
         return True
-    
-    for i in range(5, 9):
-        if i == hour:
-            return True
-        
-    if i == 9 and minute <= 54:
+
+    # 5:00から9:54の間はTrueを返す
+    if 5 <= hour < 9 or (hour == 9 and minute <= 54):
         return True
-    
+
     return False
 
 # 9:55～10:25だとtrueを返す
 def is_sell_time() -> bool:
-    pc_time = datetime.datetime.now()
+    pc_time = datetime.now()
     hour = pc_time.hour
     minute = pc_time.minute
 
-    if hour == 10 and minute <= 25:
-        return True
-    
-    if hour == 9 and minute >= 55:
+    # 9:55以降かつ10:25以前はTrueを返す
+    if (hour == 9 and minute >= 55) or (hour == 10 and minute <= 25):
         return True
 
     return False
 
 # 月曜から金曜だとTrueを返す
 def is_weekday() -> bool:
-    pc_time = datetime.datetime.now()
-    youbi = pc_time.strftime('%A')
-
-    if youbi == 'Monday':
-        return True
-    if youbi == 'Tuesday':
-        return True
-    if youbi == 'Wednesday':
-        return True
-    if youbi == 'Thursday':
-        return True
-    if youbi == 'Friday':
-        return True
-    return False
+    return datetime.now().weekday() < 5
 
 # 金曜日の判定
 def is_friday() -> bool:
-    pc_time = datetime.datetime.now()
-    youbi = pc_time.strftime('%A')
-    if youbi == 'Fraiday':
-        return True
-
-    return False
+    return datetime.now().weekday() == 4
 
 # テスト用のコード
 nenmatu = is_nenmatu_nensi()

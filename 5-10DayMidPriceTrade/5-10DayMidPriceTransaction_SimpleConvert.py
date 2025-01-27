@@ -119,7 +119,7 @@ def have_position(side) -> bool:
     }
 
     res = requests.get(endPoint + path, headers=headers, params=parameters)
-    print (json.dumps(res.json(), indent=2))
+    # print (json.dumps(res.json(), indent=2))
 
     # 成功？
     if res.json()['status'] == 0:
@@ -267,83 +267,58 @@ def is_sell() -> bool:
 
 # 5-10日の判定
 def is_gotobi() -> bool:
-    pc_time = datetime.datetime.now()
-    day = current_time.day()
-    amari = day % 5
+    # テスト用に全てTrueを返す
+    return True
+
+    pc_time = datetime.now()
+    amari = pc_time.day % 5
     if amari == 0:
         return True
-    
-    youbi = pc_time.strftime('%A')
 
-    # 週末が5-10日の場合、金曜日を5-10日とする
-    if youbi == 'Fraiday' and amari == 3:
+    # 週末が5-10日の場合、金曜日(weekdayが4)を5-10日とする
+    if pc_time.weekday() == 4 and amari in (3, 4):
         return True
-    if youbi == 'Fraiday' and amari == 4:
-        return True
-    
     return False
 
 # 4:25～9:54だとtrueを返す
-# デフォルトでは5-10が木曜日の場合、falseを返す
+# デフォルトでは5-10日が木曜日の場合、falseを返す
 def is_buy_time() -> bool:
-    pc_time = datetime.datetime.now()
+    pc_time = datetime.now()
     hour = pc_time.hour
     minute = pc_time.minute
 
-    if pc_time.strftime('%A') == 'Thursday':
+    # 木曜日ならfalse
+    if pc_time.weekday() == 3:
         return False
-    
-    if hour == 4 and minute > 24:
-        return True
-    
-    for i in range(5, 9):
-        if i == hour:
-            return True
-        
-    if i == 9 and minute <= 54:
+
+    # 4:25～9:54ならTrue    
+    if (hour == 4 and minute > 24) or (5 <= hour <= 8) or (hour == 9 and minute <= 54):
         return True
     
     return False
 
 # 9:55～10:25だとtrueを返す
 def is_sell_time() -> bool:
-    pc_time = datetime.datetime.now()
+    pc_time = datetime.now()
     hour = pc_time.hour
     minute = pc_time.minute
 
-    if hour == 10 and minute <= 25:
-        return True
-    
-    if hour == 9 and minute >= 55:
+    # 9:55-10:25ならTrue
+    if (hour == 10 and minute <= 25) or (hour == 9 and minute >= 55):
         return True
 
     return False
 
-# 月曜から金曜だとTrueを返す
+# 月曜から金曜(weekdayが0～4)だとTrueを返す
 def is_weekday() -> bool:
-    pc_time = datetime.datetime.now()
-    youbi = pc_time.strftime('%A')
+    pc_time = datetime.now()
+    weekday = pc_time.weekday()
+    return weekday < 5
 
-    if youbi == 'Monday':
-        return True
-    if youbi == 'Tuesday':
-        return True
-    if youbi == 'Wednesday':
-        return True
-    if youbi == 'Thursday':
-        return True
-    if youbi == 'Friday':
-        return True
-    return False
-
-# 金曜日の判定
+# 金曜日(weekdayが4)の判定
 def is_friday() -> bool:
-    pc_time = datetime.datetime.now()
-    youbi = pc_time.strftime('%A')
-    if youbi == 'Fraiday':
-        return True
-
-    return False
+    pc_time = datetime.now()
+    return pc_time.weekday() == 4
 
 # テスト用のコード
 nenmatu = is_nenmatu_nensi()
@@ -356,7 +331,7 @@ nenmatu = is_nenmatu_nensi()
 
 # メインの処理　1秒毎に売買の判定処理を行う
 while True:
-    current_time = datetime.datetime.now()
+    current_time = datetime.now()
 
     # 23時に売買フラグをTrueに戻す
     if current_time.hour == 23:
@@ -366,12 +341,16 @@ while True:
     # ポジションエントリの判定
     if is_buy() and is_spread_ok() and not have_position("BUY") and buy_entry_on and not is_nenmatu_nensi():
         # 買いのエントリを行う
-        OrderId = position_entry("BUY")
+        # OrderId = position_entry("BUY")
+        current_time.strftime("%Y-%m-%d %H:%M:%S")
+        print(current_time.strftime("%Y-%m-%d %H:%M:%S") + " BUY Entry")
 
     if input_sell_on:
         if is_sell() and is_spread_ok() and not have_position("SELL") and sell_entry_on and not is_nenmatu_nensi():
             # 売りのエントリを行う
-            OrderId = position_entry("SELL")
+            # OrderId = position_entry("SELL")
+            print(current_time.strftime("%Y-%m-%d %H:%M:%S") + " SELL Entry")
+
 
     # ポジションクローズの判定
     if not is_buy() and is_spread_ok() and have_position("BUY"):

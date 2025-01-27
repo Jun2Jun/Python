@@ -294,11 +294,12 @@ def is_buy_time() -> bool:
     # 4:25～9:54ならTrue    
     if (hour == 4 and minute > 24) or (5 <= hour <= 8) or (hour == 9 and minute <= 54):
         return True
-    
+
     return False
 
 # 9:55～10:25だとtrueを返す
 def is_sell_time() -> bool:
+    pc_time = datetime.now()
     pc_time = datetime.now()
     hour = pc_time.hour
     minute = pc_time.minute

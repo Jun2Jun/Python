@@ -300,7 +300,6 @@ def is_buy_time() -> bool:
 # 9:55～10:25だとtrueを返す
 def is_sell_time() -> bool:
     pc_time = datetime.now()
-    pc_time = datetime.now()
     hour = pc_time.hour
     minute = pc_time.minute
 

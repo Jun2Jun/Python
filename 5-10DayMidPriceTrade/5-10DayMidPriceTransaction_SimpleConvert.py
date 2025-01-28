@@ -267,9 +267,6 @@ def is_sell() -> bool:
 
 # 5-10日の判定
 def is_gotobi() -> bool:
-    # テスト用に全てTrueを返す
-    return True
-
     pc_time = datetime.now()
     amari = pc_time.day % 5
     if amari == 0:
@@ -321,7 +318,7 @@ def is_friday() -> bool:
     return pc_time.weekday() == 4
 
 # テスト用のコード
-nenmatu = is_nenmatu_nensi()
+# nenmatu = is_nenmatu_nensi()
 # OrderId = position_entry("SELL")
 #OrderId = 12093313
 #have_position()
@@ -341,23 +338,28 @@ while True:
     # ポジションエントリの判定
     if is_buy() and is_spread_ok() and not have_position("BUY") and buy_entry_on and not is_nenmatu_nensi():
         # 買いのエントリを行う
-        # OrderId = position_entry("BUY")
-        current_time.strftime("%Y-%m-%d %H:%M:%S")
-        print(current_time.strftime("%Y-%m-%d %H:%M:%S") + " BUY Entry")
+        OrderId = position_entry("BUY")
+        # 成功なら画面にメッセージを表示
+        if OrderId > 0:
+            print(current_time.strftime("%Y-%m-%d %H:%M:%S") + " BUY Entry")
 
     if input_sell_on:
         if is_sell() and is_spread_ok() and not have_position("SELL") and sell_entry_on and not is_nenmatu_nensi():
             # 売りのエントリを行う
-            # OrderId = position_entry("SELL")
-            print(current_time.strftime("%Y-%m-%d %H:%M:%S") + " SELL Entry")
+            OrderId = position_entry("SELL")
+            # 成功なら画面にメッセージを表示
+            if OrderId > 0:
+                print(current_time.strftime("%Y-%m-%d %H:%M:%S") + " SELL Entry")
 
 
     # ポジションクローズの判定
     if not is_buy() and is_spread_ok() and have_position("BUY"):
-        position_close("BUY")
+        if position_close("BUY"):
+            print(current_time.strftime("%Y-%m-%d %H:%M:%S") + " BUY Close")
 
     if not is_sell() and is_spread_ok() and have_position("SELL"):
-        position_close("SELL")
+        if position_close("SELL"):
+            print(current_time.strftime("%Y-%m-%d %H:%M:%S") + " SELL Close")
 
     # ポジションを確認して、buy_entory_on、sell_entory_onを更新する
     if have_position("BUY"):

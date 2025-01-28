@@ -325,6 +325,12 @@ def is_friday() -> bool:
 # PositionId = get_position_id()
 # position_close("BUY")
 
+# 実行開始のメッセージを表示
+print("Start:" + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+print(f"EA Name: {EA_NAME}")
+print(f"Pair: {PAIR}")
+print(f"Liverrage: {LIVERRAGE}")
+print(f"Spread Limit: {SPREAD_LIMIT}")
 
 # メインの処理　1秒毎に売買の判定処理を行う
 while True:

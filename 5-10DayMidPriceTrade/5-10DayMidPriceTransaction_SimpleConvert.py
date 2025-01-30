@@ -239,6 +239,29 @@ def get_position_id() -> int:
     else:
         return 0
 
+# 最新の約定一覧を取得する
+def get_latest_executions():
+    timestamp = '{0}000'.format(int(time.mktime(datetime.now().timetuple())))
+    method    = 'GET'
+    endPoint  = 'https://forex-api.coin.z.com/private'
+    path      = '/v1/latestExecutions'
+
+    text = timestamp + method + path
+    sign = hmac.new(bytes(API_SECRET.encode('ascii')), bytes(text.encode('ascii')), hashlib.sha256).hexdigest()
+    parameters = {
+        "symbol": PAIR,
+        "count": 10
+    }
+
+    headers = {
+        "API-KEY": API_KEY,
+        "API-TIMESTAMP": timestamp,
+        "API-SIGN": sign
+    }
+
+    res = requests.get(endPoint + path, headers=headers, params=parameters)
+    print (json.dumps(res.json(), indent=2))
+
 def is_nenmatu_nensi() -> bool:
     pc_time = datetime.now()
     
@@ -268,6 +291,8 @@ def is_sell() -> bool:
             return True
     
     return False
+
+
 
 # 5-10日の判定
 def is_gotobi() -> bool:
@@ -321,13 +346,8 @@ def is_friday() -> bool:
     pc_time = datetime.now()
     return pc_time.weekday() == 4
 
-# テスト用のコード
-# nenmatu = is_nenmatu_nensi()
-# OrderId = position_entry("SELL")
-#OrderId = 12093313
-#have_position()
-# PositionId = get_position_id()
-# position_close("BUY")
+# 訳情報一覧を表示するテスト用のコード
+# get_latest_executions()
 
 # 実行開始のメッセージを表示
 print("Start:" + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))

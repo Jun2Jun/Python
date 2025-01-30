@@ -171,6 +171,10 @@ def position_entry(trade_action) -> int:
 
 # ポジションクローズ
 def position_close(trade_action) -> bool:
+    # ポジションIDの取得
+    PositionId = get_position_id()
+
+    # クローズ処理
     timestamp = '{0}000'.format(int(time.mktime(datetime.now().timetuple())))
     method    = 'POST'
     endPoint  = 'https://forex-api.coin.z.com/private'
@@ -360,12 +364,12 @@ while True:
 
     # ポジションクローズの判定
     if not is_buy() and is_spread_ok() and have_position("BUY"):
-        if position_close("BUY"):
-            print(current_time.strftime("%Y-%m-%d %H:%M:%S") + " BUY Close")
+        if position_close("SELL"):
+            print(current_time.strftime("%Y-%m-%d %H:%M:%S") + " BUY Position Close")
 
     if not is_sell() and is_spread_ok() and have_position("SELL"):
-        if position_close("SELL"):
-            print(current_time.strftime("%Y-%m-%d %H:%M:%S") + " SELL Close")
+        if position_close("BUY"):
+            print(current_time.strftime("%Y-%m-%d %H:%M:%S") + " SELL Position Close")
 
     # ポジションを確認して、buy_entory_on、sell_entory_onを更新する
     if have_position("BUY"):

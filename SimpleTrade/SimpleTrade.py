@@ -12,37 +12,38 @@ class CustomWindow(QMainWindow):
         # ウィンドウの設定
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)  # フレームレスで常に最前面
         self.setAttribute(Qt.WA_TranslucentBackground)  # ウィンドウを透明に設定
-        self.setGeometry(100, 100, 400, 300)
+        self.setGeometry(100, 100, 400, 150)
+        self.setStyleSheet("background-color: rgba(0, 0, 255, 0.01);")  # 背景色を設定 
 
         # ドラッグ領域を作成
-        self.drag_area = QWidget(self)
-        self.drag_area.setGeometry(0, 0, 10, self.height())  # 左側にドラッグエリアを配置
-        self.drag_area.setStyleSheet("background-color: rgba(0, 0, 255, 0.01);")  # ドラッグ領域の背景色
+        #self.drag_area = QWidget(self)
+        #self.drag_area.setGeometry(0, 0, 10, self.height())  # 左側にドラッグエリアを配置
+        #self.drag_area.setStyleSheet("background-color: rgba(0, 0, 255, 0.01);")  # ドラッグ領域の背景色
 
         # ペアを表示するラベルを追加
         self.label_pair = QLabel("", self)
-        self.label_pair.setGeometry(30, 10, 100, 20)
+        self.label_pair.setGeometry(30, 10, 50, 20)
 
         # ペアの入力ボックスを非表示で初期化
         self.input_box_pair = QLineEdit(self)
-        self.input_box_pair.setGeometry(30, 10, 100, 20)
+        self.input_box_pair.setGeometry(30, 10, 50, 20)
         self.input_box_pair.hide()
 
         # Lotを表示するラベルを追加
         self.label_lot = QLabel('1', self)
-        self.label_lot.setGeometry(140, 10, 100, 20)
+        self.label_lot.setGeometry(90, 10, 50, 20)
 
         # Bidを表示するラベルを追加
         self.label_bid = QLabel('', self)
-        self.label_bid.setGeometry(30, 40, 100, 20)
+        self.label_bid.setGeometry(30, 30, 50, 20)
 
         # Askを表示するラベルを追加
         self.label_ask = QLabel('', self)
-        self.label_ask.setGeometry(140, 40, 100, 20)
+        self.label_ask.setGeometry(90, 30, 50, 20)
 
         # ポジション一覧を表示するラベルを追加
         self.label_position = QLabel('', self)
-        self.label_position.setGeometry(30, 140, 200, 130)
+        self.label_position.setGeometry(30, 50, 200, 100)
 
         # メインウィジェットの背景を透明に設定
         main_widget = QWidget(self)
@@ -57,7 +58,8 @@ class CustomWindow(QMainWindow):
 
     def mousePressEvent(self, event):
         # ドラッグエリア内でクリックされた場合、ドラッグを開始
-        if event.button() == Qt.LeftButton and self.drag_area.geometry().contains(event.pos()):
+        #if event.button() == Qt.LeftButton and self.drag_area.geometry().contains(event.pos()):
+        if event.button() == Qt.LeftButton :
             self.old_pos = event.pos()
 
     def mouseMoveEvent(self, event):
@@ -77,7 +79,7 @@ class CustomWindow(QMainWindow):
             self.input_box_pair.setFocus()  # 入力ボックスにフォーカスを移動
         
         # 上キーが押されたらロットの表示を1カウントアップ
-        elif event.key() == Qt.Key_Up:
+        elif (event.modifiers() & Qt.ControlModifier) and (event.modifiers() & Qt.ShiftModifier) and event.key() == Qt.Key_Up:
             current_value = int(self.label_lot.text())
             new_lot = current_value + 1
             if new_lot > 50:  # ロットの上限を50に設定
@@ -85,7 +87,7 @@ class CustomWindow(QMainWindow):
             self.label_lot.setText(str(new_lot))
 
         # 下キーが押されたらロットの表示を1カウントダウン
-        elif event.key() == Qt.Key_Down:
+        elif (event.modifiers() & Qt.ControlModifier) and (event.modifiers() & Qt.ShiftModifier) and event.key() == Qt.Key_Down:
             current_value = int(self.label_lot.text())
             new_lot = current_value - 1
             if new_lot < 1:  # ロットの下限を1に設定
@@ -135,8 +137,8 @@ class CustomWindow(QMainWindow):
         if position_list:
             for position in position_list:
                 symbol = position['symbol'][0] + position['symbol'][4]
-                side = position['side']
-                size = position['size']
+                side = position['side'][0]
+                size = str(int(position['size']) / 10000)
                 price = position['price']
                 loss_gain = position['lossGain']
                 str_position += f'{symbol}  {side}  {size}  {price}  {loss_gain}\n'

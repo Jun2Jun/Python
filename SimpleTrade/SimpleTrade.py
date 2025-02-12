@@ -12,7 +12,7 @@ class CustomWindow(QMainWindow):
         # ウィンドウの設定
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)  # フレームレスで常に最前面
         self.setAttribute(Qt.WA_TranslucentBackground)  # ウィンドウを透明に設定
-        self.setGeometry(100, 100, 400, 150)
+        self.setGeometry(100, 100, 200, 200)
         self.setStyleSheet("background-color: rgba(0, 0, 255, 0.01);")  # 背景色を設定 
 
         # ドラッグ領域を作成
@@ -22,33 +22,40 @@ class CustomWindow(QMainWindow):
 
         # ペアを表示するラベルを追加
         self.label_pair = QLabel("", self)
-        self.label_pair.setGeometry(30, 10, 50, 20)
+        self.label_pair.setGeometry(0, 0, 200, 20)
+        self.label_pair.setStyleSheet("font-size: 14px;")  # フォントサイズを設定
 
         # ペアの入力ボックスを非表示で初期化
         self.input_box_pair = QLineEdit(self)
-        self.input_box_pair.setGeometry(30, 10, 50, 20)
+        self.input_box_pair.setGeometry(0, 0, 200, 20)
+        self.input_box_pair.setStyleSheet("font-size: 14px; background-color: lightgray")  # フォントサイズを設定
         self.input_box_pair.hide()
 
         # Lotを表示するラベルを追加
         self.label_lot = QLabel('1', self)
-        self.label_lot.setGeometry(90, 10, 50, 20)
+        self.label_lot.setGeometry(0, 20, 200, 20)
+        self.label_lot.setStyleSheet("font-size: 14px;")  # フォントサイズを設定
 
         # Bidを表示するラベルを追加
         self.label_bid = QLabel('', self)
-        self.label_bid.setGeometry(30, 30, 50, 20)
+        self.label_bid.setGeometry(0, 40, 200, 20)
+        self.label_bid.setStyleSheet("font-size: 14px;")  # フォントサイズを設定
 
         # Askを表示するラベルを追加
         self.label_ask = QLabel('', self)
-        self.label_ask.setGeometry(90, 30, 50, 20)
+        self.label_ask.setGeometry(0, 60, 200, 20)
+        self.label_ask.setStyleSheet("font-size: 14px;")  # フォントサイズを設定
 
         # ポジション一覧を表示するラベルを追加
         self.label_position = QLabel('', self)
-        self.label_position.setGeometry(30, 50, 200, 100)
+        self.label_position.setGeometry(0, 80, 200, 100)
+        self.label_position.setStyleSheet("font-size: 14px;")  # フォントサイズを設定
+        self.label_position.setAlignment(Qt.AlignTop)  # 上揃いに設定
 
         # メインウィジェットの背景を透明に設定
-        main_widget = QWidget(self)
-        main_widget.setGeometry(100, 0, 300, self.height())  # 残りの領域をカバー
-        main_widget.setStyleSheet("background-color: transparent;")  # 透明に設定
+        #main_widget = QWidget(self)
+        #main_widget.setGeometry(100, 0, 300, self.height())  # 残りの領域をカバー
+        #main_widget.setStyleSheet("background-color: transparent;")  # 透明に設定
 
         #layout = QVBoxLayout(main_widget)
         #layout.addWidget(QLabel("Main Content Area (transparent)", self))

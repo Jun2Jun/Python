@@ -15,50 +15,43 @@ class CustomWindow(QMainWindow):
         self.setGeometry(100, 100, 200, 200)
         self.setStyleSheet("background-color: rgba(0, 0, 255, 0.01);")  # 背景色を設定 
 
-        # ドラッグ領域を作成
-        #self.drag_area = QWidget(self)
-        #self.drag_area.setGeometry(0, 0, 10, self.height())  # 左側にドラッグエリアを配置
-        #self.drag_area.setStyleSheet("background-color: rgba(0, 0, 255, 0.01);")  # ドラッグ領域の背景色
-
         # ペアを表示するラベルを追加
         self.label_pair = QLabel("", self)
         self.label_pair.setGeometry(0, 0, 200, 20)
-        self.label_pair.setStyleSheet("font-size: 14px;")  # フォントサイズを設定
+        self.label_pair.setStyleSheet(f"font-size: {FONT_SIZE}px;")  # フォントサイズを設定
 
         # ペアの入力ボックスを非表示で初期化
         self.input_box_pair = QLineEdit(self)
         self.input_box_pair.setGeometry(0, 0, 200, 20)
-        self.input_box_pair.setStyleSheet("font-size: 14px; background-color: lightgray")  # フォントサイズを設定
+        self.input_box_pair.setStyleSheet(f"font-size: {FONT_SIZE}px;")  # フォントサイズを設定
         self.input_box_pair.hide()
 
         # Lotを表示するラベルを追加
         self.label_lot = QLabel('1', self)
         self.label_lot.setGeometry(0, 20, 200, 20)
-        self.label_lot.setStyleSheet("font-size: 14px;")  # フォントサイズを設定
+        self.label_lot.setStyleSheet(f"font-size: {FONT_SIZE}px;")  # フォントサイズを設定
 
         # Bidを表示するラベルを追加
         self.label_bid = QLabel('', self)
         self.label_bid.setGeometry(0, 40, 200, 20)
-        self.label_bid.setStyleSheet("font-size: 14px;")  # フォントサイズを設定
+        self.label_bid.setStyleSheet(f"font-size: {FONT_SIZE}px;")  # フォントサイズを設定
 
         # Askを表示するラベルを追加
         self.label_ask = QLabel('', self)
         self.label_ask.setGeometry(0, 60, 200, 20)
-        self.label_ask.setStyleSheet("font-size: 14px;")  # フォントサイズを設定
+        self.label_ask.setStyleSheet(f"font-size: {FONT_SIZE}px;")  # フォントサイズを設定
+
+        # メッセージを表示するラベルを追加
+        self.label_message = QLabel('', self)
+        self.label_message.setGeometry(0, 80, 200, 40)
+        self.label_message.setStyleSheet(f"font-size: {FONT_SIZE}px;")  # フォントサイズを設定
+        self.label_message.setAlignment(Qt.AlignTop)  # 上揃いに設定
 
         # ポジション一覧を表示するラベルを追加
         self.label_position = QLabel('', self)
-        self.label_position.setGeometry(0, 80, 200, 100)
-        self.label_position.setStyleSheet("font-size: 14px;")  # フォントサイズを設定
+        self.label_position.setGeometry(0, 120, 200, 80)
+        self.label_position.setStyleSheet(f"font-size: {FONT_SIZE}px;")  # フォントサイズを設定
         self.label_position.setAlignment(Qt.AlignTop)  # 上揃いに設定
-
-        # メインウィジェットの背景を透明に設定
-        #main_widget = QWidget(self)
-        #main_widget.setGeometry(100, 0, 300, self.height())  # 残りの領域をカバー
-        #main_widget.setStyleSheet("background-color: transparent;")  # 透明に設定
-
-        #layout = QVBoxLayout(main_widget)
-        #layout.addWidget(QLabel("Main Content Area (transparent)", self))
 
         # ドラッグを開始するための変数
         self.old_pos = None
@@ -85,7 +78,23 @@ class CustomWindow(QMainWindow):
             self.input_box_pair.show()
             self.input_box_pair.setFocus()  # 入力ボックスにフォーカスを移動
         
-        # 上キーが押されたらロットの表示を1カウントアップ
+        # 上キーが押されたらウィンドウと文字の透明度を上げる
+        elif event.key() == Qt.Key_Up:
+            current_opacity = self.windowOpacity()
+            new_opacity = min(current_opacity + 0.1, 1.0)
+            self.setWindowOpacity(new_opacity)
+            for widget in self.findChildren(QWidget):
+                widget.setWindowOpacity(new_opacity)
+        
+        # 下キーが押されたらウィンドウと文字の透明度を下げる
+        elif event.key() == Qt.Key_Down:
+            current_opacity = self.windowOpacity()
+            new_opacity = max(current_opacity - 0.1, 0.1)
+            self.setWindowOpacity(new_opacity)
+            for widget in self.findChildren(QWidget):
+                widget.setWindowOpacity(new_opacity)
+        
+        # CtrlとShiftと上キーが押されたらロットの表示を1カウントアップ
         elif (event.modifiers() & Qt.ControlModifier) and (event.modifiers() & Qt.ShiftModifier) and event.key() == Qt.Key_Up:
             current_value = int(self.label_lot.text())
             new_lot = current_value + 1
@@ -93,7 +102,7 @@ class CustomWindow(QMainWindow):
                 new_lot = 50
             self.label_lot.setText(str(new_lot))
 
-        # 下キーが押されたらロットの表示を1カウントダウン
+        # CtrlとShiftと下キーが押されたらロットの表示を1カウントダウン
         elif (event.modifiers() & Qt.ControlModifier) and (event.modifiers() & Qt.ShiftModifier) and event.key() == Qt.Key_Down:
             current_value = int(self.label_lot.text())
             new_lot = current_value - 1
@@ -115,21 +124,35 @@ class CustomWindow(QMainWindow):
             # ロットの計算
             lot = 10000 * int(self.label_lot.text())
             # 買いエントリ
-            TradeByGmo.TradeByGmo().entry_position(self.label_pair.text(), lot, "BUY")
+            trade_result = TradeByGmo.TradeByGmo().entry_position(self.label_pair.text(), lot, "BUY")
+            if trade_result[0] == '0':
+                self.label_message.setText(trade_result[1])
+            else:
+                self.label_message.setText(f"{trade_result[1]['message_code']}\n{trade_result[1]['message_string']}")
         
         # Ctrl + Shift + Bが押されたら売りエントリを行う
         elif (event.modifiers() & Qt.ControlModifier) and (event.modifiers() & Qt.ShiftModifier) and event.key() == Qt.Key_B:
             # ロットの計算
             lot = 10000 * int(self.label_lot.text())
-            # 買いエントリ
-            TradeByGmo.TradeByGmo().entry_position(self.label_pair.text(), lot, "SELL")
+            # 売りエントリ
+            trade_result = TradeByGmo.TradeByGmo().entry_position(self.label_pair.text(), lot, "SELL")
+            if trade_result[0] == '0':
+                self.label_message.setText(trade_result[1])
+            else:
+                self.label_message.setText(f"{trade_result[1][0]['message_code']}\n{trade_result[1][0]['message_string']}")
         
         # Ctrl + Shift + C押されたらポジションクローズを行う
         elif (event.modifiers() & Qt.ControlModifier) and (event.modifiers() & Qt.ShiftModifier) and event.key() == Qt.Key_C:
             # ポジション一覧を取得
-            position_list = TradeByGmo.TradeByGmo().get_position()
-            # 保有ポジションがあればクローズを行う
-            TradeByGmo.TradeByGmo().position_close(position_list)
+            result = TradeByGmo.TradeByGmo().get_position()
+            # 取得成功の場合
+            if result[0] == '0':
+                position_list = result[1]
+                # 保有ポジションがあればクローズを行う
+                TradeByGmo.TradeByGmo().position_close(position_list)
+            # 取得失敗の場合
+            else:
+                self.label_message.setText(f"{trade_result[1][0]['message_code']}\n{trade_result[1][0]['message_string']}")
 
     # 価格を更新する関数
     def UpdatePrice(self):
@@ -137,19 +160,29 @@ class CustomWindow(QMainWindow):
         self.label_bid.setText(f"{bid}")
         self.label_ask.setText(f"{ask}")
 
+    # メッセージをクリアする関数
+    def ClearMessage(self):
+        self.label_message.setText('')
+
     # 保有ポジションを更新する関数
     def UpdatePosition(self):
         str_position = ''
-        position_list = TradeByGmo.TradeByGmo().get_position()
-        if position_list:
-            for position in position_list:
-                symbol = position['symbol'][0] + position['symbol'][4]
-                side = position['side'][0]
-                size = str(int(position['size']) / 10000)
-                price = position['price']
-                loss_gain = position['lossGain']
-                str_position += f'{symbol}  {side}  {size}  {price}  {loss_gain}\n'
-        self.label_position.setText(str_position)
+        result = TradeByGmo.TradeByGmo().get_position()
+        # 取得成功し、ポジションがある場合
+        if result[0] == '0':
+            position_list = result[1]
+            if position_list:
+                for position in position_list:
+                    symbol = position['symbol'][0] + position['symbol'][4]
+                    side = position['side'][0]
+                    size = str(int(position['size']) / 10000)
+                    price = position['price']
+                    loss_gain = position['lossGain']
+                    str_position += f'{symbol}  {side}  {size}  {price}  {loss_gain}\n'
+            self.label_position.setText(str_position)
+        # 取得失敗の場合
+        else:
+            self.label_message.setText(f"{result[1][0]['message_code']}\n{result[1][0]['message_string']}")
 
 if __name__ == "__main__":
     # 設定の読み込み
@@ -162,6 +195,7 @@ if __name__ == "__main__":
     with open(config_path, "r") as f:
         config = json.load(f)
         REFRESH_INTERVAL = config["refresh_interval"]
+        FONT_SIZE = config["font_size"]
 
     app = QApplication(sys.argv)
     window = CustomWindow()
@@ -170,6 +204,7 @@ if __name__ == "__main__":
     # 5秒ごとに価格とポジションの表示を更新
     timer = QTimer()
     timer.timeout.connect(window.UpdatePrice)
+    timer.timeout.connect(window.ClearMessage)
     timer.timeout.connect(window.UpdatePosition)
     timer.start(REFRESH_INTERVAL)
 

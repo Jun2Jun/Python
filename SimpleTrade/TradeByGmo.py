@@ -77,11 +77,12 @@ class TradeByGmo:
         res = requests.post(endPoint + path, headers=headers, data=json.dumps(reqBody))
         print (json.dumps(res.json(), indent=2))
 
-        # 成功？
+        # 成功なら0と成功メッセージを返す
         if res.json()['status'] == 0:
-            return res.json()['data'][0]['orderId']
+            return '0', trade_action + 'success'
+        # 失敗ならステータスとメッセージコード、メッセージが入ったリストを返す
         else:
-            return -1
+            return res.json()['status'], res.json()['messages']
     
     # ポジション一覧を取得する
     def get_position(self) -> list:
@@ -106,9 +107,10 @@ class TradeByGmo:
 
         # 成功ならポジション一覧を返す
         if res.json()['status'] == 0:
-            if res.json()['data']['list']:
-                return res.json()['data']['list']
-        return None
+            return '0', res.json()['data']['list']
+        # 失敗ならエラーコードとメッセージのリストを返す
+        else:
+            return res.json()['status'], res.json()['messages']
     
     # ポジションクローズ
     def position_close(self, position_list) -> bool:

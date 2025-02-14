@@ -112,6 +112,34 @@ class TradeByGmo:
         else:
             return res.json()['status'], res.json()['messages']
     
+    # 資産を取得する
+    def get_assets(self) -> list:
+        timestamp = '{0}000'.format(int(time.mktime(datetime.now().timetuple())))
+        method    = 'GET'
+        endPoint  = 'https://forex-api.coin.z.com/private'
+        path      = '/v1/account/assets'
+
+        text = timestamp + method + path
+        sign = hmac.new(bytes(self.SECRET_KEY.encode('ascii')), bytes(text.encode('ascii')), hashlib.sha256).hexdigest()
+        parameters = {
+        }
+
+        headers = {
+            "API-KEY": self.API_KEY,
+            "API-TIMESTAMP": timestamp,
+            "API-SIGN": sign
+        }
+
+        res = requests.get(endPoint + path, headers=headers, params=parameters)
+        print (json.dumps(res.json(), indent=2))
+
+        # 成功なら資産情報を返す
+        if res.json()['status'] == 0:
+            return '0', res.json()['data']
+        # 失敗ならエラーコードとメッセージのリストを返す
+        else:
+            return res.json()['status'], res.json()['messages']
+    
     # ポジションクローズ
     def position_close(self, position_list) -> bool:
         for position in position_list:

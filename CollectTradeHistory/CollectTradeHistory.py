@@ -3,6 +3,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC   
 from selenium.common.exceptions import WebDriverException
 import os
 import json
@@ -14,7 +16,9 @@ chrome_driver_path = "chromedriver.exe"
 
 # オプション設定（ヘッドレスモードや他の設定を必要に応じて）
 chrome_options = Options()
+chrome_options.add_argument("--window-size=400,200")  # ウィンドウサイズを指定
 #chrome_options.add_argument("--headless")  # ヘッドレスモード（ブラウザを表示しない）
+
 
 # WebDriverの起動
 try:
@@ -59,19 +63,35 @@ try:
 except Exception as e:
     print("パスワードの入力に失敗しました:", e)
 
-# ボタンをクリックする
+# ログインボタンをクリックする
 try:
-    # name属性を使ってボタンを探す
+    # name属性を使ってログインボタンを探す
     button = driver.find_element(By.NAME, "LoginForm")
     
-    # ボタンをクリック
+    # ログインボタンをクリック
     button.click()
     print("ボタンをクリックしました")
 except Exception as e:
     print("ボタンのクリックに失敗しました:", e)
 
-# 処理を待つ場合は少しスリープ
-time.sleep(3)
+# ログイン後のページが表示されるまで待つ
+time.sleep(5)
+
+# バナーのモーダルウィンドウを閉じる
+try:
+    modal_banner = driver.find_element(By.ID, "modal_banner")
+    if not modal_banner:
+        print("バナーのモーダルウィンドウが見つかりませんでした")
+    else:
+        print("バナーのモーダルウィンドウが表示されました")
+        close_button = modal_banner.find_element(By.CLASS_NAME, "btn-close")
+        if close_button:
+            print("閉じるボタンが見つかりました")
+        # close_buttonが他の要素でおおわれているので、javascriptでクリックする
+        driver.execute_script("arguments[0].click();", close_button)
+        print("バナーのモーダルウィンドウを閉じました")
+except Exception as e:
+    print("バナーのモーダルウィンドウを閉じる処理に失敗しました:", e)
 
 # ブラウザを閉じる
 driver.quit()

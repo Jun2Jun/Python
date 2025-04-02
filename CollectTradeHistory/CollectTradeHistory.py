@@ -1,3 +1,4 @@
+from influxdb_client import InfluxDBClient, Point, WritePrecision
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -12,6 +13,32 @@ import re
 import json
 import time
 import sys
+
+# InfluxDBから最新のタイムスタンプを取得する関数
+def get_latest_timestamp(measurement: str) -> str:
+    # InfluxDBの接続情報
+    url = "http://localhost:8086"      # InfluxDBのURL
+    token = "rhZl5mEW2G_M7QVeVothojAaqJWqFRLdeEXlZXIlK8Zh7_rW26CYqNAkvcneKzDkrAAXX7pdPqwoN2noyekRsw==" # 取得したトークン
+    org = "organization"               # DOCKER_INFLUXDB_INIT_ORG と同じ
+    bucket = "bucket"                  # DOCKER_INFLUXDB_INIT_BUCKET と同じ
+
+    # InfluxDBに接続する
+    client = InfluxDBClient(url=url, token=token, org=org)
+
+    query = f'from(bucket: "{bucket}") |> range(start: -30d) |> filter(fn: (r) => r._measurement == "{measurement}") |> sort(columns: ["_time"], desc: true) |> limit(n: 1)'
+
+    # 最新のタイムスタンプを取得
+    result = client.query_api().query(query)
+
+    if result:
+        # タイムスタンプを取得
+        latest_record = result[0].records[0]
+        latest_timestamp = latest_record.get_time()
+
+        # タイムスタンプを年月日形式に変換
+        return latest_timestamp.strftime('%Y-%m-%d')
+    else:
+        return None
 
 # ダウンロード中のファイル名を監視してダウンロード完了を検知する関数
 def wait_for_download_to_complete(download_directory):
@@ -29,6 +56,11 @@ def wait_for_download_to_complete(download_directory):
         if not any(file.endswith(".crdownload") for file in new_files):
             print("ダウンロードが完了しました。")
             break  # ダウンロード完了
+
+# テストコード
+# 最新のタイムスタンプを取得
+latest_timestamp = get_latest_timestamp("trade_history")
+# テストコード終わり
 
 # ChromeDriverのパスを指定（ChromeDriverのインストールが必要です）
 chrome_driver_path = "chromedriver.exe"
@@ -149,9 +181,9 @@ try:
     
     # 参照する日付の期間を入力する
     reference_date_from.clear()
-    reference_date_from.send_keys("20250312")
+    reference_date_from.send_keys("20250301")
     reference_date_to.clear()
-    reference_date_to.send_keys("20250315")
+    reference_date_to.send_keys("20250331")
 
 except Exception as e:
     print("参照する期間の入力に失敗しました:", e)

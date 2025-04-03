@@ -13,6 +13,7 @@ import re
 import json
 import time
 import sys
+from datetime import datetime
 
 # InfluxDBから最新のタイムスタンプを取得する関数
 def get_latest_timestamp(measurement: str) -> str:
@@ -24,7 +25,11 @@ def get_latest_timestamp(measurement: str) -> str:
 
     # InfluxDBに接続する
     client = InfluxDBClient(url=url, token=token, org=org)
+    # クエリAPIを使用してInfluxDBにクエリを実行する
+    query_api = client.query_api()
 
+    # 過去30日間のデータを取得し、指定した measurement でフィルタリング
+    # _time でソートして最新1件のみ取得するFluxクエリを作成
     query = f'from(bucket: "{bucket}") |> range(start: -30d) |> filter(fn: (r) => r._measurement == "{measurement}") |> sort(columns: ["_time"], desc: true) |> limit(n: 1)'
 
     # 最新のタイムスタンプを取得
@@ -36,7 +41,7 @@ def get_latest_timestamp(measurement: str) -> str:
         latest_timestamp = latest_record.get_time()
 
         # タイムスタンプを年月日形式に変換
-        return latest_timestamp.strftime('%Y-%m-%d')
+        return latest_timestamp.strftime('%Y%m%d')
     else:
         return None
 
@@ -57,10 +62,8 @@ def wait_for_download_to_complete(download_directory):
             print("ダウンロードが完了しました。")
             break  # ダウンロード完了
 
-# テストコード
-# 最新のタイムスタンプを取得
+# 最新のタイムスタンプをInflux DBから取得
 latest_timestamp = get_latest_timestamp("trade_history")
-# テストコード終わり
 
 # ChromeDriverのパスを指定（ChromeDriverのインストールが必要です）
 chrome_driver_path = "chromedriver.exe"
@@ -181,9 +184,11 @@ try:
     
     # 参照する日付の期間を入力する
     reference_date_from.clear()
-    reference_date_from.send_keys("20250301")
+    reference_date_from.send_keys(latest_timestamp)
+    # 本日の日付をYYYYMMDD形式で取得
     reference_date_to.clear()
-    reference_date_to.send_keys("20250331")
+    today = datetime.now().strftime('%Y%m%d')
+    reference_date_to.send_keys(today)
 
 except Exception as e:
     print("参照する期間の入力に失敗しました:", e)

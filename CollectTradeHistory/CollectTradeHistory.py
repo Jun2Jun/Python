@@ -7,6 +7,7 @@ from selenium.common.exceptions import WebDriverException
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from urllib3.exceptions import NewConnectionError  # 必要な例外をインポート
 
 import os
 import re
@@ -17,14 +18,25 @@ from datetime import datetime
 
 # InfluxDBから最新のタイムスタンプを取得する関数
 def get_latest_timestamp(measurement: str) -> str:
+    # urlとtokenを設定ファイルから読み込み
+    # 設定ファイル名
+    config_file = "setting.json"
+    # スクリプトのディレクトリを取得
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # 設定ファイルのパスを生成
+    config_path = os.path.join(script_dir, config_file)
+    with open(config_path, "r") as f:
+        config = json.load(f)
+        influxdb_url = config["InfluxDB"]["url"]
+        influxdb_token = config["InfluxDB"]["token"]
+        retleave_default_from = config["InfluxDB"]["retleave_default_from"]
+
     # InfluxDBの接続情報
-    url = "http://localhost:8086"      # InfluxDBのURL
-    token = "rhZl5mEW2G_M7QVeVothojAaqJWqFRLdeEXlZXIlK8Zh7_rW26CYqNAkvcneKzDkrAAXX7pdPqwoN2noyekRsw==" # 取得したトークン
     org = "organization"               # DOCKER_INFLUXDB_INIT_ORG と同じ
     bucket = "bucket"                  # DOCKER_INFLUXDB_INIT_BUCKET と同じ
 
     # InfluxDBに接続する
-    client = InfluxDBClient(url=url, token=token, org=org)
+    client = InfluxDBClient(url=influxdb_url, token=influxdb_token, org=org)
     # クエリAPIを使用してInfluxDBにクエリを実行する
     query_api = client.query_api()
 
@@ -33,7 +45,11 @@ def get_latest_timestamp(measurement: str) -> str:
     query = f'from(bucket: "{bucket}") |> range(start: -30d) |> filter(fn: (r) => r._measurement == "{measurement}") |> sort(columns: ["_time"], desc: true) |> limit(n: 1)'
 
     # 最新のタイムスタンプを取得
-    result = client.query_api().query(query)
+    try:
+        result = client.query_api().query(query)
+    except NewConnectionError as e:
+        print("InfluxDBへの接続に失敗しました:", e)
+        return retleave_default_from
 
     if result:
         # タイムスタンプを取得
@@ -43,7 +59,7 @@ def get_latest_timestamp(measurement: str) -> str:
         # タイムスタンプを年月日形式に変換
         return latest_timestamp.strftime('%Y%m%d')
     else:
-        return None
+        return retleave_default_from
 
 # ダウンロード中のファイル名を監視してダウンロード完了を検知する関数
 def wait_for_download_to_complete(download_directory):
@@ -115,8 +131,8 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 config_path = os.path.join(script_dir, config_file)
 with open(config_path, "r") as f:
     config = json.load(f)
-    USER_ID = config["userid"]
-    PASSWORD = config["password"]
+    USER_ID = config["GMO"]["userid"]
+    PASSWORD = config["GMO"]["password"]
 
 # ユーザ名を入力する
 try:

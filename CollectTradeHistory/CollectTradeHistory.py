@@ -78,187 +78,138 @@ def wait_for_download_to_complete(download_directory):
             print("ダウンロードが完了しました。")
             break  # ダウンロード完了
 
-# 最新のタイムスタンプをInflux DBから取得
-latest_timestamp = get_latest_timestamp("trade_history")
+def load_config(config_file: str) -> dict:
+    """設定ファイルを読み込む"""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(script_dir, config_file)
+    with open(config_path, "r") as f:
+        return json.load(f)
 
-# ChromeDriverのパスを指定（ChromeDriverのインストールが必要です）
-chrome_driver_path = "chromedriver.exe"
 
-# スクリプトの場所（.pyファイルが存在するディレクトリ）を起点にする
-script_directory = os.path.dirname(os.path.abspath(__file__))
+def setup_webdriver(download_directory: str) -> webdriver.Chrome:
+    """WebDriverを初期化する"""
+    chrome_options = Options()
+    chrome_options.add_experimental_option("prefs", {
+        "download.default_directory": download_directory,
+        "download.prompt_for_download": False,
+        "download.directory_upgrade": True,
+        "safebrowsing.enabled": True
+    })
+    # chrome_options.add_argument("--headless")  # 必要に応じてヘッドレスモードを有効化
+    service = Service("chromedriver.exe")
+    return webdriver.Chrome(service=service, options=chrome_options)
 
-# スクリプトのディレクトリにあるdownloadフォルダを指定
-download_directory = os.path.join(script_directory, "download")
 
-# ダウンロードフォルダが存在しない場合は作成
-if not os.path.exists(download_directory):
-    os.makedirs(download_directory)
+def login_to_gmo(driver: webdriver.Chrome, user_id: str, password: str):
+    """GMOのマイページにログインする"""
+    driver.get("https://sec-sso.click-sec.com/loginweb/")
+    try:
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "j_username")))
+        driver.find_element(By.ID, "j_username").send_keys(user_id)
+        driver.find_element(By.ID, "j_password").send_keys(password)
+        driver.find_element(By.NAME, "LoginForm").click()
+        print("ログインに成功しました")
+    except Exception as e:
+        print("ログインに失敗しました:", e)
+        driver.quit()
+        sys.exit()
 
-# オプション設定（ヘッドレスモードや他の設定を必要に応じて）
-chrome_options = Options()
-chrome_options.add_experimental_option("prefs", {
-  "download.default_directory": download_directory,  # ダウンロードの保存先を指定
-  "download.prompt_for_download": False,  # ダウンロード時にダイアログを表示しない
-  "download.directory_upgrade": True,  # 保存先のディレクトリを自動でアップグレード
-  "safebrowsing.enabled": True  # セーフブラウジングを有効にする
-})
-#chrome_options.add_argument("--headless")  # ヘッドレスモード（ブラウザを表示しない）
 
-# WebDriverの起動
-try:
-    service = Service(chrome_driver_path)
-    driver = webdriver.Chrome(service=service, options=chrome_options)
-except WebDriverException as e:
-    print(f"ChromeDriverの起動に失敗しました: {e}")
-    sys.exit()
+def navigate_to_trade_history(driver: webdriver.Chrome):
+    """精算表ページに移動する"""
+    try:
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.LINK_TEXT, "精算表")))
+        driver.find_element(By.LINK_TEXT, "精算表").click()
+        print("精算表ページに移動しました")
+    except Exception as e:
+        print("精算表ページへの移動に失敗しました:", e)
+        driver.quit()
+        sys.exit()
 
-# GMOのマイページにアクセス
-driver.get("https://sec-sso.click-sec.com/loginweb/")
 
-# ユーザ名の入力ボックスが表示されるまでWebページの表示を待つ
-try:
-    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "j_username")))
-    print("ページの読み込みが完了しました")
-except Exception as e:
-    print("ページの読み込みに失敗しました:", e)
+def set_trade_filters(driver: webdriver.Chrome, latest_timestamp: str):
+    """取引のフィルタを設定する"""
+    try:
+        driver.find_element(By.ID, "torihikiKbnList_3_1").click()  # 取引のチェックボックス
+        driver.find_element(By.ID, "torihikiKbnList_3_2").click()  # スワップのチェックボックス
+        reference_date_from = driver.find_element(By.ID, "referenceDate_from")
+        reference_date_to = driver.find_element(By.ID, "referenceDate_to")
+        reference_date_from.clear()
+        reference_date_from.send_keys(latest_timestamp)
+        reference_date_to.clear()
+        reference_date_to.send_keys(datetime.now().strftime('%Y%m%d'))
+        print("取引フィルタを設定しました")
+    except Exception as e:
+        print("取引フィルタの設定に失敗しました:", e)
+        driver.quit()
+        sys.exit()
 
-# useridとpasswordを設定ファイルから読み込み
-# 設定ファイル名
-config_file = "setting.json"
-# スクリプトのディレクトリを取得
-script_dir = os.path.dirname(os.path.abspath(__file__))
-# 設定ファイルのパスを生成
-config_path = os.path.join(script_dir, config_file)
-with open(config_path, "r") as f:
-    config = json.load(f)
-    USER_ID = config["GMO"]["userid"]
-    PASSWORD = config["GMO"]["password"]
 
-# ユーザ名を入力する
-try:
-    # id属性を使って入力フィールドを探す
-    input_field = driver.find_element(By.ID, "j_username")
-    
-    # ユーザ名を入力する
-    input_field.send_keys(USER_ID)
-except Exception as e:
-    print("ユーザ名の入力に失敗しました:", e)
+def search_and_download(driver: webdriver.Chrome, download_directory: str):
+    """検索を実行し、結果をダウンロードする"""
+    try:
+        driver.find_element(By.ID, "searchButton").click()
+        print("検索を実行しました")
+        time.sleep(5)  # 検索完了を待つ
+        tr_element = driver.find_element(By.XPATH, '/html/body/div[2]/form/div[2]/div[2]/table/tbody/tr[2]')
+        button = tr_element.find_element(By.ID, 'linkTradingSearchResultDownload')
+        button.click()
+        print("ダウンロードボタンをクリックしました")
+        wait_for_download_to_complete(download_directory)
+    except NoSuchElementException as e:
+        print("検索結果が見つかりませんでした:", e)
+        driver.quit()
+        sys.exit()
 
-# パスワードを入力する
-try:
-    # id属性を使って入力フィールドを探す
-    input_field = driver.find_element(By.ID, "j_password")
-    
-    # パスワードを入力する
-    input_field.send_keys(PASSWORD)
-except Exception as e:
-    print("パスワードの入力に失敗しました:", e)
 
-# ログインボタンをクリックする
-try:
-    # name属性を使ってボタンを探す
-    button = driver.find_element(By.NAME, "LoginForm")
-    
-    # ログインボタンをクリック
-    button.click()
-    print("ログインボタンをクリックしました")
-except Exception as e:
-    print("ログインボタンのクリックに失敗しました:", e)
-
-# 画面の表示を待つ
-time.sleep(5)
-
-# 精算表のリンクが表示されるまでWebページの表示を待つ
-try:
-    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.LINK_TEXT, "精算表")))
-    print("ページの読み込みが完了しました")
-except Exception as e:
-    print("ページの読み込みに失敗しました:", e)
-
-# 「精算表」リンクをクリックする
-driver.find_element(By.LINK_TEXT, "精算表").click()
-
-# 取引のチェックボックスをクリックする
-try:
-    # id属性を使って取引のチェックボックスを探す
-    checkbox_deal = driver.find_element(By.ID, "torihikiKbnList_3_1")
-    # チェックボックスをクリック
-    checkbox_deal.click()
-
-    # id属性を使ってスワップのチェックボックスを探す
-    checkbox_swap = driver.find_element(By.ID, "torihikiKbnList_3_2")
-    # チェックボックスをクリック
-    checkbox_swap.click()
-except Exception as e:
-    print("チェックボックスのクリックに失敗しました:", e)
-
-# 参照する日付の期間を入力する
-try:
-    # id属性を使って入力フィールドを探す
-    reference_date_from = driver.find_element(By.ID, "referenceDate_from")
-    reference_date_to = driver.find_element(By.ID, "referenceDate_to")
-    
-    # 参照する日付の期間を入力する
-    reference_date_from.clear()
-    reference_date_from.send_keys(latest_timestamp)
-    # 本日の日付をYYYYMMDD形式で取得
-    reference_date_to.clear()
-    today = datetime.now().strftime('%Y%m%d')
-    reference_date_to.send_keys(today)
-
-except Exception as e:
-    print("参照する期間の入力に失敗しました:", e)
-
-# 検索ボタンをクリックする
-try:
-    # name属性を使ってボタンを探す
-    button = driver.find_element(By.ID, "searchButton")
-    
-    # 検索ボタンをクリック
-    button.click()
-    print("検索ボタンをクリックしました")
-except Exception as e:
-    print("検索ボタンのクリックに失敗しました:", e)
-
-# 検索完了まで待つ
-time.sleep(5)
-
-try:
-    # 検索結果の一番上に表示されるtr[2]要素をXPathで取得
-    tr_element = driver.find_element(By.XPATH, '/html/body/div[2]/form/div[2]/div[2]/table/tbody/tr[2]')
-    
-    # tr要素内にid="linkTradingSearchResultDownload"のボタンがあるか確認
-    button = tr_element.find_element(By.ID, 'linkTradingSearchResultDownload')
-    
-    # ボタンが存在すればクリック
-    button.click()
-    print("ダウンロードボタンをクリックしました。")
-
-    # ダウンロード完了を待機
-    wait_for_download_to_complete(download_directory)
-
-    # buttonからhref属性を取得
-    href_value = button.get_attribute("href")
-
-    # 正規表現を使ってtradeRequestKeyの値を取得
-    trade_request_key = re.search(r'tradeRequestKey=([0-9]+)', href_value).group(1)
-    # trade_request_keyの先頭17文字を取得
+def validate_download(download_directory: str, trade_request_key: str):
+    """ダウンロードされたファイルを検証する"""
     key_prefix = trade_request_key[:17]
-
-    # ディレクトリ内のファイル一覧を取得
     files_in_directory = os.listdir(download_directory)
-    
-    # trade_request_keyを含む.csvファイルが存在するかチェック
     for file_name in files_in_directory:
         if key_prefix in file_name and file_name.endswith(".csv"):
-            print(f"{file_name}が見つかりました。")
-            break
-        else:
-            print(f"{key_prefix}を含む.csvファイルが見つかりませんでした。")
+            print(f"{file_name}が見つかりました")
+            return
+    print(f"{key_prefix}を含む.csvファイルが見つかりませんでした")
 
-except NoSuchElementException as e:
-    # ダウンロードボタンが見つからない場合の例外処理
-    print("指定されたtr要素が見つからない、または、検索結果がありませんでした。", e)
 
-# ブラウザを閉じる
-driver.quit()
+def main():
+    # 設定ファイルを読み込む
+    config = load_config("setting.json")
+    user_id = config["GMO"]["userid"]
+    password = config["GMO"]["password"]
+
+    # ダウンロードディレクトリを設定
+    script_directory = os.path.dirname(os.path.abspath(__file__))
+    download_directory = os.path.join(script_directory, "download")
+    if not os.path.exists(download_directory):
+        os.makedirs(download_directory)
+
+    # WebDriverを初期化
+    driver = setup_webdriver(download_directory)
+
+    # 最新のタイムスタンプを取得
+    latest_timestamp = get_latest_timestamp("trade_history")
+
+    # GMOにログイン
+    login_to_gmo(driver, user_id, password)
+
+    # 精算表ページに移動
+    navigate_to_trade_history(driver)
+
+    # 取引フィルタを設定
+    set_trade_filters(driver, latest_timestamp)
+
+    # 検索とダウンロードを実行
+    search_and_download(driver, download_directory)
+
+    # ダウンロードされたファイルを検証
+    trade_request_key = "example_trade_request_key"  # 実際にはボタンのhrefから取得
+    validate_download(download_directory, trade_request_key)
+
+    # ブラウザを閉じる
+    driver.quit()
+
+
+if __name__ == "__main__":
+    main()

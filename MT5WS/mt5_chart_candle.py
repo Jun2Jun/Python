@@ -1,21 +1,53 @@
 import asyncio
+import pyautogui
 import tkinter as tk
 import tkinter.font as tkFont
 from datetime import datetime, timezone
 from mt5_ws_client import get_rates
+from PIL import Image, ImageTk
+
 
 class CandleChart(tk.Canvas):
-    def __init__(self, master, rates, info_labels, symbol_short, timeframe, **kwargs):
+    def __init__(self, master, rates, info_labels, symbol_short, timeframe, chart_x, chart_y, chart_width, chart_height, **kwargs):
         super().__init__(master, **kwargs)
+        self.master = master
+        self.chart_x = chart_x
+        self.chart_y = chart_y
+        self.chart_width = chart_width
+        self.chart_height = chart_height
         self.rates = rates
         self.info_labels = info_labels
         self.symbol_short = symbol_short
         self.timeframe = timeframe
         self.candle_width = 2
         self.candle_gap = 1
+        self.bg_image_id = None
+        self.bg_image = None
+
+        # 背景画像を設定
+        self.update_background_image()
         self.draw_candles()
         self.bind("<Motion>", self.on_mouse_move)
+    
+    # 背景画像を更新するメソッド
+    def update_background_image(self):
+        # 自ウィンドウ非表示にしてスクリーンショット取得、背景更新
+        self.master.withdraw()
+        self.master.update()
+        screenshot = pyautogui.screenshot()
+        crop = screenshot.crop((
+            self.chart_x, self.chart_y,
+            self.chart_x + self.chart_width,
+            self.chart_y + self.chart_height
+        ))
+        self.bg_image = ImageTk.PhotoImage(crop)
+        self.master.deiconify()
 
+        self.delete("all")
+        self.bg_image_id = self.create_image(0, 0, anchor='nw', image=self.bg_image)
+        self.draw_candles()
+
+    # ロウソク足を描画するメソッド
     def draw_candles(self):
         height = int(self['height'])
         width = int(self['width'])
@@ -102,8 +134,7 @@ class CandleChart(tk.Canvas):
     # ratesを更新して再描画
     def update_rates(self, new_rates):
         self.rates = new_rates
-        self.delete("all")
-        self.draw_candles()
+        self.update_background_image()
 
 def main():
     symbol = "USDJPY"     # 通貨ペア指定
@@ -197,8 +228,22 @@ def main():
     rate_display_label = tk.Label(root, text="", font=font, bg='white', anchor="e")
     rate_display_label.place(x=info_width, y=5, width=rate_display_width)
 
+    # スクリーンショットを取得して背景画像を作成
+    root.withdraw() # 自分のウィンドウを非表示に
+    root.update() # 非表示状態を即座に反映
+    screenshot = pyautogui.screenshot() # 自分のウィンドウが映り込まないように撮影
+    chart_x = x_pos + info_width + rate_display_width
+    bg_crop = screenshot.crop((chart_x, y_pos, chart_x + chart_width, y_pos + height))
+    bg_image = ImageTk.PhotoImage(bg_crop)
+    root.deiconify() # ウィンドウを再表示
+
     # ---チャート表示エリア（情報エリアの右）---
-    chart = CandleChart(root, rates, info_labels=info_labels, symbol_short=symbol_short, timeframe=timeframe, width=chart_width, height=height, bg='white', highlightthickness=0)
+    chart = CandleChart(
+        root, rates, info_labels=info_labels, symbol_short=symbol_short,
+        timeframe=timeframe,
+        chart_x=chart_x, chart_y=y_pos, chart_width=chart_width, chart_height=height,
+        width=chart_width, height=height, bg='white', highlightthickness=0
+    )
     chart.place(x=info_width + rate_display_width, y=0)
 
     # ---レート表示操作エリア(チャート表示エリアの右)---
@@ -226,7 +271,7 @@ def main():
         root._drag_start_x = event.x_root
         root._drag_start_y = event.y_root
 
-    # ドラッグ移動処理
+    # ドラッグ移動処理(マウスドラッグ)
     def on_drag(event):
         dx = event.x_root - root._drag_start_x
         dy = event.y_root - root._drag_start_y
@@ -235,9 +280,19 @@ def main():
         root.geometry(f"+{x}+{y}")
         root._drag_start_x = event.x_root
         root._drag_start_y = event.y_root
+    
+    # ドラッグ移動処理(マウスリリース)
+    def on_drag_release(event):
+        x = root.winfo_x()
+        y = root.winfo_y()
+        chart.chart_x = x + info_width + rate_display_width
+        chart.chart_y = y
+        chart.update_background_image()
 
+    # ドラッグエリアにマウスイベントをバインド
     drag_area.bind("<ButtonPress-1>", start_move)
     drag_area.bind("<B1-Motion>", on_drag)
+    drag_area.bind("<ButtonRelease-1>", on_drag_release)
 
     # 透明度を変更
     def increase_opacity(event=None):

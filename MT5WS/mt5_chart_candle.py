@@ -23,6 +23,7 @@ class CandleChart(tk.Canvas):
         self.candle_gap = 1
         self.bg_image_id = None
         self.bg_image = None
+        self.dashed_line_id = None
 
         # 背景画像を設定
         self.update_background_image()
@@ -43,9 +44,11 @@ class CandleChart(tk.Canvas):
         self.bg_image = ImageTk.PhotoImage(crop)
         self.master.deiconify()
 
-        self.delete("all")
-        self.bg_image_id = self.create_image(0, 0, anchor='nw', image=self.bg_image)
-        self.draw_candles()
+        if self.bg_image_id:
+            self.itemconfig(self.bg_image_id, image=self.bg_image)
+        else:
+            self.bg_image_id = self.create_image(0, 0, anchor='nw', image=self.bg_image)
+        self.redraw_only_candles()
 
     # ロウソク足を描画するメソッド
     def draw_candles(self):
@@ -81,20 +84,25 @@ class CandleChart(tk.Canvas):
             self.create_rectangle(
                 x, high_y,
                 x + self.candle_width, body_top,
-                fill='red', width=0
+                fill='red', width=0, tags="candle"
             )
             # ヒゲ(下)
             self.create_rectangle(
                 x, body_bottom,
                 x + self.candle_width, low_y,
-                fill='red', width=0
+                fill='red', width=0, tags="candle"
             )
             # 実体
             self.create_rectangle(
                 x, body_top,
                 x + self.candle_width, body_bottom,
-                fill='green', width=0
+                fill='green', width=0, tags="candle"
             )
+
+    def redraw_only_candles(self):
+        # 既存のキャンドルだけ削除して再描画
+        self.delete("candle")
+        self.draw_candles()
 
     def y_to_price(self, y):
         height = int(self['height'])
@@ -135,6 +143,48 @@ class CandleChart(tk.Canvas):
     def update_rates(self, new_rates):
         self.rates = new_rates
         self.update_background_image()
+
+    # ダッシュラインを表示する
+    def show_dashed_line(self, y):
+        if self.dashed_line_id:
+            self.delete(self.dashed_line_id)
+        self.dashed_line_id = self.create_line(
+            0, y, self.chart_width, y,
+            fill='black', dash=(4, 2)
+        )
+
+    # ダッシュラインを非表示にする
+    def hide_dashed_line(self):
+        if self.dashed_line_id:
+            self.delete(self.dashed_line_id)
+            self.dashed_line_id = None
+
+class RateControlCanvas(tk.Canvas):
+    def __init__(self, master, chart_x, chart_y, width, height, **kwargs):
+        super().__init__(master, width=width, height=height, bg='white', highlightthickness=0, **kwargs)
+        self.chart_x = chart_x
+        self.chart_y = chart_y
+        self.chart_width = width
+        self.chart_height = height
+        self.bg_image = None
+        self.bg_image_id = None
+        self.update_background_image()
+
+    def update_background_image(self):
+        self.master.withdraw()
+        self.master.update()
+
+        screenshot = pyautogui.screenshot()
+        crop = screenshot.crop((
+            self.chart_x, self.chart_y,
+            self.chart_x + self.chart_width,
+            self.chart_y + self.chart_height
+        ))
+        self.bg_image = ImageTk.PhotoImage(crop)
+        self.master.deiconify()
+
+        self.delete("all")
+        self.bg_image_id = self.create_image(0, 0, anchor='nw', image=self.bg_image)
 
 def main():
     symbol = "USDJPY"     # 通貨ペア指定
@@ -247,20 +297,34 @@ def main():
     chart.place(x=info_width + rate_display_width, y=0)
 
     # ---レート表示操作エリア(チャート表示エリアの右)---
-    rate_control_area = tk.Frame(root, bg="gray", width=rate_control_width, height=height)
-    rate_control_area.place(x=info_width + rate_display_width + chart_width + gap_between_chart_and_control, y=0)
+    rate_control_canvas = RateControlCanvas(
+        root,
+        chart_x=chart_x + chart_width + gap_between_chart_and_control,
+        chart_y=y_pos,
+        width=rate_control_width,
+        height=height
+    )
+    rate_control_canvas.place(x=info_width + rate_display_width + chart_width + gap_between_chart_and_control, y=0)
+
+#    rate_control_area = tk.Frame(root, bg="gray", width=rate_control_width, height=height)
+#    rate_control_area.place(x=info_width + rate_display_width + chart_width + gap_between_chart_and_control, y=0)
 
     def on_rate_drag(event):
         y = event.y
         if 0 <= y <= height:
             price = chart.y_to_price(y)
             rate_display_label.config(text=f"{price:.3f}")
+            label_height = rate_display_label.winfo_reqheight()
+            adjusted_y = y - label_height // 2
+            rate_display_label.place(x=info_width, y=adjusted_y, width=rate_display_width)  # レート表示ラベルの位置を更新
+            chart.show_dashed_line(y) # ダッシュラインを表示
 
     def on_rate_release(event):
         rate_display_label.config(text="")
+        chart.hide_dashed_line() # ダッシュラインを非表示
 
-    rate_control_area.bind("<B1-Motion>", on_rate_drag)
-    rate_control_area.bind("<ButtonRelease-1>", on_rate_release)
+    rate_control_canvas.bind("<B1-Motion>", on_rate_drag)
+    rate_control_canvas.bind("<ButtonRelease-1>", on_rate_release)
 
     # ---ドラッグエリア（右端）---
     drag_area = tk.Frame(root, bg='gray', width=drag_width, height=height)
@@ -285,9 +349,14 @@ def main():
     def on_drag_release(event):
         x = root.winfo_x()
         y = root.winfo_y()
+        # チャートの背景を更新
         chart.chart_x = x + info_width + rate_display_width
         chart.chart_y = y
         chart.update_background_image()
+        # レート表示操作エリアの背景を更新
+        rate_control_canvas.chart_x = x + info_width + rate_display_width + chart_width + gap_between_chart_and_control
+        rate_control_canvas.chart_y = y
+        rate_control_canvas.update_background_image()
 
     # ドラッグエリアにマウスイベントをバインド
     drag_area.bind("<ButtonPress-1>", start_move)

@@ -140,8 +140,9 @@ class CandleChart(tk.Canvas):
                 self.info_labels[i].config(text=val)
     
     # ratesを更新して再描画
-    def update_rates(self, new_rates):
+    def update_rates(self, new_rates, new_timeframe):
         self.rates = new_rates
+        self.timeframe = new_timeframe
         self.update_background_image()
 
     # ダッシュラインを表示する
@@ -159,6 +160,7 @@ class CandleChart(tk.Canvas):
             self.delete(self.dashed_line_id)
             self.dashed_line_id = None
 
+#  レート表示操作エリアを管理するためのキャンバスクラス
 class RateControlCanvas(tk.Canvas):
     def __init__(self, master, chart_x, chart_y, width, height, **kwargs):
         super().__init__(master, width=width, height=height, bg='white', highlightthickness=0, **kwargs)
@@ -306,9 +308,7 @@ def main():
     )
     rate_control_canvas.place(x=info_width + rate_display_width + chart_width + gap_between_chart_and_control, y=0)
 
-#    rate_control_area = tk.Frame(root, bg="gray", width=rate_control_width, height=height)
-#    rate_control_area.place(x=info_width + rate_display_width + chart_width + gap_between_chart_and_control, y=0)
-
+    # レート表示操作エリアでマウスをドラッグしたときの処理
     def on_rate_drag(event):
         y = event.y
         if 0 <= y <= height:
@@ -319,6 +319,7 @@ def main():
             rate_display_label.place(x=info_width, y=adjusted_y, width=rate_display_width)  # レート表示ラベルの位置を更新
             chart.show_dashed_line(y) # ダッシュラインを表示
 
+    # レート表示操作エリアでマウスを離したときの処理
     def on_rate_release(event):
         rate_display_label.config(text="")
         chart.hide_dashed_line() # ダッシュラインを非表示
@@ -357,7 +358,9 @@ def main():
         rate_control_canvas.chart_x = x + info_width + rate_display_width + chart_width + gap_between_chart_and_control
         rate_control_canvas.chart_y = y
         rate_control_canvas.update_background_image()
-
+        # ウィンドウにフォーカスを戻す
+        root.focus_force()
+ 
     # ドラッグエリアにマウスイベントをバインド
     drag_area.bind("<ButtonPress-1>", start_move)
     drag_area.bind("<B1-Motion>", on_drag)
@@ -381,7 +384,7 @@ def main():
     # timeframe変更イベント
     async def update_timeframe(new_timeframe):
         new_rates = await get_rates(symbol, new_timeframe, candle_count)
-        chart.update_rates(new_rates)
+        chart.update_rates(new_rates, new_timeframe)
 
         latest = new_rates[-1]
         dt = datetime.fromtimestamp(latest["time"], tz=timezone.utc)
@@ -397,6 +400,8 @@ def main():
         ]
         for i, val in enumerate(updated_values):
             info_labels[i].config(text=val)
+        
+        root.focus_force()  # ウィンドウにフォーカスを戻す
     
     # キーイベントでtimeframe変更
     def on_keypress(event):

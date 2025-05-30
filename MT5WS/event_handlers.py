@@ -2,7 +2,6 @@ import asyncio
 from datetime import datetime, timezone
 
 # レート表示エリアでドラッグされたときの処理をバインド
-
 def bind_drag_events(canvas, chart, label, height, info_width, rate_display_width):
     def on_drag(event):
         y = event.y
@@ -21,7 +20,6 @@ def bind_drag_events(canvas, chart, label, height, info_width, rate_display_widt
     canvas.bind("<ButtonRelease-1>", on_release)
 
 # ウィンドウ全体をドラッグ移動させる処理
-
 def bind_drag_window_events(root, chart, rate_control_canvas, config):
     def start_move(event):
         root._drag_start_x = event.x_root
@@ -50,7 +48,6 @@ def bind_drag_window_events(root, chart, rate_control_canvas, config):
     return start_move, on_drag, on_release
 
 # キーボード操作でtimeframe変更や透明度変更
-
 def bind_key_events(root, chart, symbol, symbol_short, candle_count, info_labels, opacity_ref, get_rates_func):
     def increase_opacity():
         if opacity_ref[0] < 1.0:
@@ -92,5 +89,9 @@ def bind_key_events(root, chart, symbol, symbol_short, candle_count, info_labels
             idx = int(key) - 1
             if idx < len(timeframes):
                 asyncio.run(update_timeframe(timeframes[idx]))
+        elif key == "Return":  # Enterキーでチャートの表示/非表示を切り替え
+            chart.toggle_chart_visibility()
+        elif key == "m":  # mキーで移動平均線の表示/非表示を切り替え
+            chart.toggle_moving_averages()
 
     root.bind("<Key>", on_key)

@@ -3,12 +3,12 @@ import tkinter as tk
 import tkinter.font as tkFont
 from datetime import datetime, timezone
 from PIL import ImageTk
-import pyautogui  # スクリーンショット取得に使用
+import pyautogui
 
 from chart_canvas import CandleChart
 from rate_control_canvas import RateControlCanvas
 from event_handlers import bind_drag_events, bind_drag_window_events, bind_key_events
-from ws_client import MT5WebSocketClient  # ← 変更されたクラス名とファイル名に対応
+from ws_client import MT5WebSocketClient
 
 # アプリケーションのエントリーポイント
 
@@ -17,13 +17,22 @@ def main():
     timeframe = "M5"      # タイムフレーム指定
     candle_count = 250    # ロウソク足の数を指定
 
-    # クライアントインスタンスを作成し、レート取得
+    # WebSocketクライアントを初期化
     client = MT5WebSocketClient()
-    def fetch_rates_sync(symbol, timeframe, count):
-        return asyncio.run(MT5WebSocketClient().request_rates(symbol, timeframe, count))
-    rates = fetch_rates_sync(symbol, timeframe, candle_count)
 
-    # メインウィンドウのセットアップ
+    # ★ timeframeごとのキャッシュを保持する辞書
+    cached_data = {}
+
+    # 同期的にレートを取得する関数（初期表示用）
+    def fetch_rates_sync(symbol, timeframe, count):
+        return asyncio.run(client.request_rates(symbol, timeframe, count))
+
+    # キャッシュがなければ初回データを取得
+    if timeframe not in cached_data:
+        cached_data[timeframe] = fetch_rates_sync(symbol, timeframe, candle_count)
+    rates = cached_data[timeframe]
+
+    # メインウィンドウの設定
     root = tk.Tk()
     root.overrideredirect(True)  # タイトルバー・枠なし
     root.config(bg='white')
@@ -45,9 +54,7 @@ def main():
     drag_width = 10      # ドラッグ領域の幅
     height = 300
 
-    gap_chart_control = 0
-    gap_control_drag = 0
-    total_width = info_width + rate_display_width + chart_width + gap_chart_control + rate_control_width + gap_control_drag + drag_width
+    total_width = info_width + rate_display_width + chart_width + rate_control_width + drag_width
 
     # ウィンドウの表示位置（右下）
     x_pos = screen_width - total_width
@@ -99,7 +106,7 @@ def main():
     )
     rate_control_canvas.place(x=info_width + rate_display_width + chart_width, y=0)
 
-    # 操作エリアのマウスイベントをバインド
+    # マウス操作イベントをバインド
     bind_drag_events(rate_control_canvas, chart, rate_display_label, height, info_width, rate_display_width)
 
     # --- ウィンドウのドラッグ移動エリア（右端） ---
@@ -117,10 +124,26 @@ def main():
     drag_area.bind("<B1-Motion>", on_drag)
     drag_area.bind("<ButtonRelease-1>", on_release)
 
-    # キーボードイベントのバインド
-    bind_key_events(root, chart, symbol, symbol_short, candle_count, info_labels, opacity, client.request_rates)
+    # キャッシュに追記する get_rates_func（差分取得対応）
+    async def get_rates_func(symbol, tf, count):
+        if tf not in cached_data:
+            cached_data[tf] = await client.request_rates(symbol, tf, count)
+        else:
+            last_time = cached_data[tf][-1]["time"]
+            new_data = await client.request_rates(symbol, tf, count=100, from_time=last_time)
+            if new_data:
+                # 前回の最新ロウソク足を置き換え、後続を追加
+                updated = [d for d in new_data if d["time"] >= last_time]
+                if updated:
+                    cached_data[tf][-1] = updated[0]  # 上書き
+                    cached_data[tf].extend(updated[1:])  # それ以降を追加
 
-    # メインループ
+        return cached_data[tf]
+
+    # キーボードイベント（透明度変更・timeframe変更）
+    bind_key_events(root, chart, symbol, symbol_short, candle_count, info_labels, opacity, get_rates_func)
+
+    # メインループ開始
     root.mainloop()
 
 if __name__ == "__main__":

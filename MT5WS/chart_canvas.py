@@ -4,6 +4,9 @@ from PIL import ImageTk
 import pyautogui
 
 # ロウソク足チャートを描画するキャンバス
+# 移動平均線の期間（任意に設定可能）
+DEFAULT_MA_PERIODS = [20, 75, 200]
+
 class CandleChart(tk.Canvas):
     def __init__(self, master, rates, info_labels, symbol_short, timeframe, chart_x, chart_y, chart_width, chart_height, **kwargs):
         super().__init__(master, **kwargs)
@@ -21,6 +24,9 @@ class CandleChart(tk.Canvas):
         self.bg_image_id = None
         self.bg_image = None
         self.dashed_line_id = None
+        self.chart_visible = True  # チャートの表示状態を保持
+        self.ma_visible = False    # 移動平均線の表示状態
+        self.ma_lines = []         # 移動平均線IDリスト
 
         # 背景画像の初期描画とロウソク足描画
         self.update_background_image()
@@ -48,6 +54,9 @@ class CandleChart(tk.Canvas):
 
     # ロウソク足を描画
     def draw_candles(self):
+        if not self.chart_visible:  # チャート非表示なら描画しない
+            return
+        
         height = int(self['height'])
         width = int(self['width'])
 
@@ -82,6 +91,56 @@ class CandleChart(tk.Canvas):
     def redraw_only_candles(self):
         self.delete("candle")
         self.draw_candles()
+        if self.ma_visible:
+            self.draw_moving_averages(DEFAULT_MA_PERIODS)
+
+    # チャートの表示・非表示を切り替える
+    def toggle_chart_visibility(self):
+        self.chart_visible = not self.chart_visible
+        self.redraw_only_candles()
+    
+    # 移動平均線の表示・非表示を切り替える
+    def toggle_moving_averages(self):
+        self.ma_visible = not self.ma_visible
+        for line_id in self.ma_lines:
+            self.delete(line_id)
+        self.ma_lines.clear()
+        if self.ma_visible:
+            self.draw_moving_averages(DEFAULT_MA_PERIODS)
+
+    # 移動平均線を描画
+    def draw_moving_averages(self, periods):
+        import statistics
+
+        height = int(self['height'])
+        width = int(self['width'])
+        highs = [r['high'] for r in self.rates]
+        lows = [r['low'] for r in self.rates]
+        max_price = max(highs)
+        min_price = min(lows)
+        price_range = max_price - min_price or 1
+        space_per_candle = self.candle_width + self.candle_gap
+
+        def price_to_y(price):
+            return height - int((price - min_price) / price_range * height)
+
+        closes = [r['close'] for r in self.rates]
+
+        for period in periods:
+            if len(closes) < period:
+                continue
+            ma_points = []
+            for i in range(period - 1, len(closes)):
+                avg = statistics.mean(closes[i - period + 1:i + 1])
+                x = width - (len(closes) - i) * space_per_candle
+                y = price_to_y(avg)
+                ma_points.append((x, y))
+
+            for i in range(1, len(ma_points)):
+                x1, y1 = ma_points[i - 1]
+                x2, y2 = ma_points[i]
+                line_id = self.create_line(x1, y1, x2, y2, fill='black', width=1, tags='ma')
+                self.ma_lines.append(line_id)
 
     # Y座標を価格に変換
     def y_to_price(self, y):
@@ -121,6 +180,14 @@ class CandleChart(tk.Canvas):
         self.rates = new_rates
         self.timeframe = new_timeframe
         self.update_background_image()
+        # timeframe切替時に古い移動平均線を削除
+        for line_id in self.ma_lines:
+            self.delete(line_id)
+        self.ma_lines.clear()
+        self.update_background_image()
+        # ma_visible が True の場合、移動平均線を再描画
+        if self.ma_visible:
+            self.draw_moving_averages(DEFAULT_MA_PERIODS)
 
     # ダッシュライン表示
     def show_dashed_line(self, y):

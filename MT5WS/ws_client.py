@@ -9,20 +9,24 @@ class MT5WebSocketClient:
         self.uri = uri
 
     # 為替レートデータをリクエストし、結果を返す（非同期）
-    async def request_rates(self, symbol: str, timeframe: str, count: int = 100):
-        payload = self._build_request(symbol, timeframe, count)
+    # from_time を指定すれば差分のみ取得できる
+    async def request_rates(self, symbol: str, timeframe: str, count: int = 100, from_time: int = None):
+        payload = self._build_request(symbol, timeframe, count, from_time)
         async with websockets.connect(self.uri) as ws:
             await ws.send(json.dumps(payload))  # リクエスト送信
             response = await ws.recv()          # 非同期で応答受信
             return self._handle_response(response)  # 同期関数で処理
 
     # リクエストデータの作成
-    def _build_request(self, symbol: str, timeframe: str, count: int):
-        return {
+    def _build_request(self, symbol: str, timeframe: str, count: int, from_time: int = None):
+        req = {
             "symbol": symbol,
             "timeframe": timeframe,
             "count": count,
         }
+        if from_time:
+            req["from_time"] = from_time  # 差分取得開始時刻（UNIX秒）
+        return req
 
     # サーバからの応答を検証・抽出する
     def _handle_response(self, raw_response: str):
@@ -35,7 +39,6 @@ class MT5WebSocketClient:
             return data["data"]
         except json.JSONDecodeError:
             raise ValueError("Invalid JSON response received")
-
 
 # テスト用の実行スクリプト（直接実行された場合のみ動作）
 if __name__ == "__main__":

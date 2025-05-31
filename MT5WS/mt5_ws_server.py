@@ -21,20 +21,13 @@ TIMEFRAME_MAP = {
     "MN1": mt5.TIMEFRAME_MN1,
 }
 
-# MT5 を初期化する関数
-
-def init_mt5():
-    if not mt5.initialize():
-        return False, "MT5 initialization failed"
-    return True, ""
+# MT5の初期化を行う
+if not mt5.initialize():
+    raise RuntimeError("MT5 initialization failed")
 
 # クライアントからのリクエストに基づいてレートデータを取得する非同期関数
 # from_time が指定された場合、その時刻以降のレートを取得
 async def get_rates(symbol, timeframe_str, count, from_time=None):
-    ok, err = init_mt5()
-    if not ok:
-        return {"error": err}
-
     timeframe = TIMEFRAME_MAP.get(timeframe_str.upper())
     if timeframe is None:
         return {"error": f"Invalid timeframe: {timeframe_str}"}

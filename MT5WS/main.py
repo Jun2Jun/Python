@@ -1,6 +1,7 @@
 import asyncio
 import tkinter as tk
 import tkinter.font as tkFont
+import tkinter.simpledialog
 from datetime import datetime, timezone
 from PIL import ImageTk
 import pyautogui
@@ -9,6 +10,18 @@ from chart_canvas import CandleChart
 from rate_control_canvas import RateControlCanvas
 from event_handlers import bind_drag_events, bind_drag_window_events, bind_key_events
 from ws_client import MT5WebSocketClient
+
+# --- 通貨コード → 正式通貨ペアへのマッピング ---
+SYMBOL_MAP = {
+    "UJ": "USDJPY",
+    "EU": "EURUSD",
+    "EJ": "EURJPY",
+    "GU": "GBPUSD",
+    "GJ": "GBPJPY",
+    "AU": "AUDUSD",
+    "AJ": "AUDJPY",
+    "XU": "GOLD",
+}
 
 # アプリケーションのエントリーポイント
 
@@ -28,9 +41,10 @@ def main():
         return asyncio.run(client.request_rates(symbol, timeframe, count))
 
     # キャッシュがなければ初回データを取得
-    if timeframe not in cached_data:
-        cached_data[timeframe] = fetch_rates_sync(symbol, timeframe, candle_count)
-    rates = cached_data[timeframe]
+    cache_key = f"{symbol}_{timeframe}"
+    if cache_key not in cached_data:
+        cached_data[cache_key] = fetch_rates_sync(symbol, timeframe, candle_count)
+    rates = cached_data[cache_key]
 
     # メインウィンドウの設定
     root = tk.Tk()
@@ -106,6 +120,36 @@ def main():
     )
     rate_control_canvas.place(x=info_width + rate_display_width + chart_width, y=0)
 
+    # --- エントリ入力エリアの作成（透明、フォント一致） ---
+    symbol_entry = tk.Entry(root, font=font)
+    symbol_entry.place_forget()
+
+    # --- 通貨切替処理 ---
+    def switch_symbol(new_short):
+        nonlocal symbol, symbol_short, rates
+        mapped = SYMBOL_MAP.get(new_short.upper())
+        if not mapped:
+            return
+        symbol = mapped
+        symbol_short = new_short.upper()
+
+        cache_key = f"{symbol}_{timeframe}"
+        if cache_key not in cached_data:
+            cached_data[cache_key] = fetch_rates_sync(symbol, timeframe, candle_count)
+        rates = cached_data[cache_key]
+
+        chart.rates = rates
+        chart.symbol_short = symbol_short
+        chart.update_background_image()
+        chart.redraw_only_candles()
+
+        latest = rates[-1]
+        dt = datetime.fromtimestamp(latest["time"], tz=timezone.utc)
+        time_str = dt.strftime("%Y.%m.%d %H:%M")
+        updated_values = [symbol_short, timeframe, time_str, f"{latest['open']:.3f}", f"{latest['high']:.3f}", f"{latest['low']:.3f}", f"{latest['close']:.3f}"]
+        for i, val in enumerate(updated_values):
+            info_labels[i].config(text=val)
+
     # マウス操作イベントをバインド
     bind_drag_events(rate_control_canvas, chart, rate_display_label, height, info_width, rate_display_width)
 
@@ -126,22 +170,69 @@ def main():
 
     # キャッシュに追記する get_rates_func（差分取得対応）
     async def get_rates_func(symbol, tf, count):
-        if tf not in cached_data:
-            cached_data[tf] = await client.request_rates(symbol, tf, count)
+        cache_key = f"{symbol}_{tf}"
+        if cache_key not in cached_data:
+            cached_data[cache_key] = await client.request_rates(symbol, tf, count)
         else:
-            last_time = cached_data[tf][-1]["time"]
+            last_time = cached_data[cache_key][-1]["time"]
             new_data = await client.request_rates(symbol, tf, count=100, from_time=last_time)
             if new_data:
-                # 前回の最新ロウソク足を置き換え、後続を追加
                 updated = [d for d in new_data if d["time"] >= last_time]
                 if updated:
-                    cached_data[tf][-1] = updated[0]  # 上書き
-                    cached_data[tf].extend(updated[1:])  # それ以降を追加
+                    cached_data[cache_key][-1] = updated[0]
+                    cached_data[cache_key].extend(updated[1:])
+        return cached_data[cache_key]
 
-        return cached_data[tf]
+    # --- EnterとSpaceでの通貨入力・表示切替対応 ---
+    def on_key_custom(event):
+        if event.keysym == "space":
+            symbol_entry.place(x=5, y=5 + 7 * 14, width=info_width - 10)
+            symbol_entry.lift()
+            symbol_entry.focus_set()
+        elif event.keysym == "Return":
+            if symbol_entry.winfo_ismapped():
+                text = symbol_entry.get().strip()
+                symbol_entry.place_forget()
+                if text:
+                    switch_symbol(text)
+            else:
+                chart.toggle_chart_visibility()
 
-    # キーボードイベント（透明度変更・timeframe変更）
-    bind_key_events(root, chart, symbol, symbol_short, candle_count, info_labels, opacity, get_rates_func)
+    # --- カスタムキーバインド（元の bind_key_events の内容含む） ---
+    async def update_timeframe(new_timeframe):
+        new_rates = await get_rates_func(symbol, new_timeframe, candle_count)
+        chart.update_rates(new_rates, new_timeframe)
+        latest = new_rates[-1]
+        dt = datetime.fromtimestamp(latest["time"], tz=timezone.utc)
+        time_str = dt.strftime("%Y.%m.%d %H:%M")
+        updated_values = [symbol_short, new_timeframe, time_str, f"{latest['open']:.3f}", f"{latest['high']:.3f}", f"{latest['low']:.3f}", f"{latest['close']:.3f}"]
+        for i, val in enumerate(updated_values):
+            info_labels[i].config(text=val)
+        root.focus_force()
+
+    def bind_custom_keys():
+        def on_all_keys(event):
+            on_key_custom(event)
+            key = event.keysym
+            if key == "m":
+                chart.toggle_moving_averages()
+            elif key == "Up":
+                if opacity[0] < 1.0:
+                    opacity[0] = round(min(1.0, opacity[0] + 0.1), 1)
+                    root.wm_attributes('-alpha', opacity[0])
+            elif key == "Down":
+                if opacity[0] > 0.1:
+                    opacity[0] = round(max(0.1, opacity[0] - 0.1), 1)
+                    root.wm_attributes('-alpha', opacity[0])
+            elif key in "123456789":
+                timeframes = ["M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"]
+                idx = int(key) - 1
+                if idx < len(timeframes):
+                    asyncio.run(update_timeframe(timeframes[idx]))
+
+        root.bind("<Key>", on_all_keys)
+
+    bind_custom_keys()
 
     # メインループ開始
     root.mainloop()

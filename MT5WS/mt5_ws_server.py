@@ -36,7 +36,19 @@ async def get_rates(symbol, timeframe_str, count, from_time=None):
         try:
             # from_time はすでに UTC 時間（UNIX秒）として渡されるため、再度の補正を避ける
             utc_from = datetime.fromtimestamp(int(from_time), tz=timezone.utc)
-            rates = mt5.copy_rates_from(symbol, timeframe, utc_from, count)
+             # 最新データから多めに取得し、from_time 以降のインデックスを探す
+            recent_data = mt5.copy_rates_from_pos(symbol, timeframe, 0, 5000)
+            if recent_data is None or len(recent_data) == 0:
+                return {"error": f"No data found for {symbol}"}
+
+            # from_time 以降の最初のバーインデックスを検索
+            start_index = next((i for i, r in enumerate(recent_data) if r['time'] >= int(from_time)), None)
+            if start_index is None:
+                return {"error": "No data available after specified from_time"}
+
+            # そのインデックスからcount件取得（必要なら再取得）
+            rates = recent_data[start_index:start_index + count]
+            # rates = mt5.copy_rates_from(symbol, timeframe, utc_from, count)
         except Exception as e:
             return {"error": str(e)}
     else:

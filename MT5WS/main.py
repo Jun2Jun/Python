@@ -7,8 +7,9 @@ from PIL import ImageTk
 import pyautogui
 
 from chart_canvas import CandleChart
+from config import moving_average_periods
 from rate_control_canvas import RateControlCanvas
-from event_handlers import bind_drag_events, bind_drag_window_events, bind_key_events
+from event_handlers import bind_drag_events, bind_drag_window_events
 from ws_client import MT5WebSocketClient
 
 # --- 通貨コード → 正式通貨ペアへのマッピング ---
@@ -23,17 +24,30 @@ SYMBOL_MAP = {
     "XU": "GOLD",
 }
 
-# アプリケーションのエントリーポイント
+# 通貨ペア略称に応じた小数点桁数
+DECIMAL_PLACES_MAP = {
+    "EU": 5, "GU": 5, "AU": 5,
+    "UJ": 3, "EJ": 3, "GJ": 3, "AJ": 3,
+    "XU": 2,
+}
 
+def get_format_func(symbol_short):
+    digits = DECIMAL_PLACES_MAP.get(symbol_short.upper(), 3) # デフォルト3桁
+    return lambda value: f"{value:.{digits}f}"
+
+# アプリケーションのエントリーポイント
 def main():
     symbol = "USDJPY"     # 通貨ペア指定
     timeframe = "M5"      # タイムフレーム指定
     candle_count = 250    # ロウソク足の数を指定
 
+    max_ma_period = max(moving_average_periods)  # 最大移動平均期間を取得
+    required_candle_count = candle_count + max_ma_period  # 表示＋移動平均に必要な本数
+
     # WebSocketクライアントを初期化
     client = MT5WebSocketClient()
 
-    # ★ timeframeごとのキャッシュを保持する辞書
+    # timeframeごとのキャッシュを保持する辞書
     cached_data = {}
 
     # 同期的にレートを取得する関数（初期表示用）
@@ -43,8 +57,8 @@ def main():
     # キャッシュがなければ初回データを取得
     cache_key = f"{symbol}_{timeframe}"
     if cache_key not in cached_data:
-        cached_data[cache_key] = fetch_rates_sync(symbol, timeframe, candle_count)
-    rates = cached_data[cache_key]
+        cached_data[cache_key] = fetch_rates_sync(symbol, timeframe, required_candle_count)
+    rates = cached_data[cache_key][-required_candle_count:] # 表示用だけでなく移動平均用の期間も含める
 
     # メインウィンドウの設定
     root = tk.Tk()
@@ -82,7 +96,14 @@ def main():
     symbol_short = symbol[0] + symbol[3]
     dt = datetime.fromtimestamp(latest["time"], tz=timezone.utc)
     time_str = dt.strftime("%Y.%m.%d %H:%M")
-    info_values = [symbol_short, timeframe, time_str, f"{latest['open']:.3f}", f"{latest['high']:.3f}", f"{latest['low']:.3f}", f"{latest['close']:.3f}"]
+    fmt = get_format_func(symbol_short)
+    info_values = [
+        symbol_short, timeframe, time_str,
+        fmt(latest['open']),
+        fmt(latest['high']),
+        fmt(latest['low']),
+        fmt(latest['close']),
+    ]
     info_labels = []
     for i, text in enumerate(info_values):
         label = tk.Label(info_frame, text=text, anchor="w", font=font, bg='white')
@@ -105,8 +126,9 @@ def main():
     chart = CandleChart(
         root, rates, info_labels=info_labels, symbol_short=symbol_short, timeframe=timeframe,
         chart_x=x_pos + info_width + rate_display_width, chart_y=y_pos,
-        chart_width=chart_width, chart_height=height,
-        width=chart_width, height=height, bg='white', highlightthickness=0
+        chart_width=chart_width, chart_height=height, candle_display_count=candle_count,
+        width=chart_width, height=height, bg='white', highlightthickness=0,
+        format_func=fmt
     )
     chart.place(x=info_width + rate_display_width, y=0)
 
@@ -132,21 +154,40 @@ def main():
             return
         symbol = mapped
         symbol_short = new_short.upper()
+        fmt = get_format_func(symbol_short)
 
         cache_key = f"{symbol}_{timeframe}"
         if cache_key not in cached_data:
-            cached_data[cache_key] = fetch_rates_sync(symbol, timeframe, candle_count)
-        rates = cached_data[cache_key]
+            cached_data[cache_key] = fetch_rates_sync(symbol, timeframe, required_candle_count)
+        rates = cached_data[cache_key][-required_candle_count:]
 
         chart.rates = rates
         chart.symbol_short = symbol_short
+        chart.format_func = fmt
+
+        # --- 古い移動平均線を削除 ---
+        for line_id in chart.ma_lines:
+            chart.delete(line_id)
+        chart.ma_lines.clear()
+
         chart.update_background_image()
         chart.redraw_only_candles()
 
+        # --- ma_visible が True なら再描画 ---
+        if chart.ma_visible:
+            chart.draw_moving_averages(moving_average_periods)
+
+        # --- ラベル更新 ---
         latest = rates[-1]
         dt = datetime.fromtimestamp(latest["time"], tz=timezone.utc)
         time_str = dt.strftime("%Y.%m.%d %H:%M")
-        updated_values = [symbol_short, timeframe, time_str, f"{latest['open']:.3f}", f"{latest['high']:.3f}", f"{latest['low']:.3f}", f"{latest['close']:.3f}"]
+        updated_values = [
+            symbol_short, timeframe, time_str,
+            fmt(latest['open']),
+            fmt(latest['high']),
+            fmt(latest['low']),
+            fmt(latest['close']),
+        ]
         for i, val in enumerate(updated_values):
             info_labels[i].config(text=val)
 
@@ -170,22 +211,29 @@ def main():
 
     # キャッシュに追記する get_rates_func（差分取得対応）
     async def get_rates_func(symbol, tf, count):
-        cache_key = f"{symbol}_{tf}"
+        cache_key = f"{symbol}_{tf}" # キャッシュキーを通貨ペア(symbol)とタイムフレーム(tf)で作成
+        # キャッシュに該当データがない場合、サーバから新規に取得してキャッシュに格納
         if cache_key not in cached_data:
             cached_data[cache_key] = await client.request_rates(symbol, tf, count)
         else:
+            # キャッシュの最新データの時刻を取得
             last_time = cached_data[cache_key][-1]["time"]
+            # 最新時刻以降のデータを100件取得（過去の更新を含める可能性も考慮）
             new_data = await client.request_rates(symbol, tf, count=100, from_time=last_time)
             if new_data:
+                # 新しいデータの中で、last_time以降のデータのみを抽出（重複防止）
                 updated = [d for d in new_data if d["time"] >= last_time]
                 if updated:
+                     # 既存の最後のデータを新しいデータで置き換え（同一時刻でも内容が更新されている可能性があるため）
                     cached_data[cache_key][-1] = updated[0]
+                    # 残りの新規データをキャッシュに追加
                     cached_data[cache_key].extend(updated[1:])
         return cached_data[cache_key]
 
     # --- EnterとSpaceでの通貨入力・表示切替対応 ---
     def on_key_custom(event):
         if event.keysym == "space":
+            symbol_entry.delete(0, tk.END)  # 前回の入力をクリア
             symbol_entry.place(x=5, y=5 + 7 * 14, width=info_width - 10)
             symbol_entry.lift()
             symbol_entry.focus_set()
@@ -195,17 +243,27 @@ def main():
                 symbol_entry.place_forget()
                 if text:
                     switch_symbol(text)
+                root.after_idle(lambda: root.focus_force())
             else:
                 chart.toggle_chart_visibility()
 
     # --- カスタムキーバインド（元の bind_key_events の内容含む） ---
     async def update_timeframe(new_timeframe):
-        new_rates = await get_rates_func(symbol, new_timeframe, candle_count)
+        nonlocal fmt
+        new_rates = await get_rates_func(symbol, new_timeframe, required_candle_count)
+        fmt = get_format_func(symbol_short)  # 通貨ペアに対応する桁数を再取得   
+        chart.format_func = fmt # チャートにも反映
         chart.update_rates(new_rates, new_timeframe)
         latest = new_rates[-1]
         dt = datetime.fromtimestamp(latest["time"], tz=timezone.utc)
         time_str = dt.strftime("%Y.%m.%d %H:%M")
-        updated_values = [symbol_short, new_timeframe, time_str, f"{latest['open']:.3f}", f"{latest['high']:.3f}", f"{latest['low']:.3f}", f"{latest['close']:.3f}"]
+        updated_values = [
+            symbol_short, new_timeframe, time_str,
+            fmt(latest['open']),
+            fmt(latest['high']),
+            fmt(latest['low']),
+            fmt(latest['close']),
+        ]
         for i, val in enumerate(updated_values):
             info_labels[i].config(text=val)
         root.focus_force()
@@ -233,6 +291,8 @@ def main():
         root.bind("<Key>", on_all_keys)
 
     bind_custom_keys()
+
+    root.focus_force() # メインループ前にrootに強制的にフォーカスをセット
 
     # メインループ開始
     root.mainloop()

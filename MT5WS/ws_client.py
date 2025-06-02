@@ -4,7 +4,7 @@ import websockets
 
 # MT5 WebSocket サーバと通信するクライアントクラス
 class MT5WebSocketClient:
-    def __init__(self, uri="ws://localhost:8765"):
+    def __init__(self, uri="ws://192.168.1.39:8765"):
         # WebSocket サーバのURIを初期化
         self.uri = uri
 

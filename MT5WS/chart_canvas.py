@@ -25,15 +25,59 @@ class CandleChart(tk.Canvas):
         self.bg_image = None
         self.dashed_line_id = None
         self.chart_visible = True  # チャートの表示状態を保持
-        self.ma_visible = False    # 移動平均線の表示状態
+        self.ma_visible = False    # 移動平均線の表示状態を保持
         self.ma_lines = []         # 移動平均線IDリスト
         self.format_func = format_func or (lambda v: f"{v:.3f}")
         self.candle_display_count = candle_display_count
+        self.divider_visible = False # 区切りの縦線描画状態を保持
+        self.divider_lines = []  # 区切り縦線の描画IDリスト
 
         # 背景画像の初期描画とロウソク足描画
         self.update_background_image()
         self.draw_candles()
         self.bind("<Motion>", self.on_mouse_move)
+
+    # 区切り縦線の表示を切り替える
+    def toggle_time_dividers(self):
+        self.divider_visible = not self.divider_visible
+        if self.divider_visible:
+            self.draw_time_dividers()
+        else:
+            for line_id in self.divider_lines:
+                self.delete(line_id)
+            self.divider_lines.clear()
+    
+    # 区切り縦線の描画
+    def draw_time_dividers(self):
+        self.divider_lines.clear()
+        self.delete("divider")
+
+        width = int(self['width'])
+        height = int(self['height'])
+        display_rates = self.rates[-self.candle_display_count:]
+        space_per_candle = self.candle_width + self.candle_gap
+
+        prev_key = None
+        for i, r in enumerate(display_rates):
+            dt = datetime.fromtimestamp(r["time"], tz=timezone.utc)
+            key = None
+            tf = self.timeframe.upper()
+            if tf in ["M1", "M5", "M15", "M30", "H1"]:
+                key = dt.date()
+            elif tf == "H4":
+                key = (dt.year, dt.isocalendar().week)  # 年と週
+            elif tf == "D1":
+                key = (dt.year, dt.month)
+            elif tf == "W1":
+                key = dt.year
+            elif tf == "MN1":
+                continue  # 表示しない
+
+            if key != prev_key and prev_key is not None:
+                x = width - (len(display_rates) - i) * space_per_candle + self.candle_width // 2
+                line_id = self.create_line(x, 0, x, height, fill='black', dash=(3, 2), tags="divider")
+                self.divider_lines.append(line_id)
+            prev_key = key
 
     # 背景画像を取得・表示
     def update_background_image(self):
@@ -197,6 +241,12 @@ class CandleChart(tk.Canvas):
         # ma_visible が True の場合、移動平均線を再描画
         if self.ma_visible:
             self.draw_moving_averages(moving_average_periods)
+        # 区切り縦線の表示状態に応じて再描画
+        if self.divider_visible:
+            for line_id in self.divider_lines:
+                self.delete(line_id)
+            self.divider_lines.clear()
+            self.draw_time_dividers()
 
     # ダッシュライン表示
     def show_dashed_line(self, y):

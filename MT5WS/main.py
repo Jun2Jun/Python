@@ -274,6 +274,8 @@ def main():
             key = event.keysym
             if key == "m":
                 chart.toggle_moving_averages()
+            elif key == "t":
+                chart.toggle_time_dividers()
             elif key == "Up":
                 if opacity[0] < 1.0:
                     opacity[0] = round(min(1.0, opacity[0] + 0.1), 1)

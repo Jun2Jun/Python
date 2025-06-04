@@ -267,6 +267,9 @@ def main():
         for i, val in enumerate(updated_values):
             info_labels[i].config(text=val)
         root.focus_force()
+    
+    # ここでchart.update_funcにupdate_timeframeの処理を設定
+    chart.update_func = update_timeframe
 
     def bind_custom_keys():
         def on_all_keys(event):

@@ -2,13 +2,13 @@ import tkinter as tk
 from datetime import datetime, timezone
 from PIL import ImageTk
 import pyautogui
-
-from config import moving_average_periods
+import asyncio
+from config import moving_average_periods, auto_update_interval
 
 class CandleChart(tk.Canvas):
     def __init__(self, master, rates, info_labels, symbol_short, timeframe,
                  chart_x, chart_y, chart_width, chart_height, candle_display_count=250,
-                 format_func=None, **kwargs):
+                 format_func=None, update_func=None, **kwargs):
         super().__init__(master, **kwargs)
         self.master = master
         self.chart_x = chart_x
@@ -31,12 +31,30 @@ class CandleChart(tk.Canvas):
         self.candle_display_count = candle_display_count
         self.divider_visible = False # 区切りの縦線描画状態を保持
         self.divider_lines = []  # 区切り縦線の描画IDリスト
+        self.update_func = update_func # 自動更新で使用する更新関数（非同期）
 
         # 背景画像の初期描画とロウソク足描画
         self.update_background_image()
         self.draw_candles()
         self.bind("<Motion>", self.on_mouse_move)
 
+        # 自動更新の設定（ミリ秒単位）
+        self.auto_update_interval = auto_update_interval * 1000  # 自動更新間隔（ミリ秒）
+        if self.auto_update_interval > 0:
+            self.schedule_auto_update()
+    
+    # 指定間隔で auto_update をスケジュール実行
+    def schedule_auto_update(self):
+        self.after(self.auto_update_interval, self.auto_update)
+
+    # update_func が指定されていれば定期的に呼び出して更新
+    def auto_update(self):
+        if self.update_func:
+            # update_funcが渡されてれば更新が行われる。
+            # main.pyで渡しているので設定した時間で更新されるようになっている。
+            asyncio.run(self.update_func(self.timeframe))
+        self.schedule_auto_update()
+    
     # 区切り縦線の表示を切り替える
     def toggle_time_dividers(self):
         self.divider_visible = not self.divider_visible

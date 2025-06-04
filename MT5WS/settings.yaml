@@ -1,0 +1,8 @@
+# チャートの自動更新間隔（秒）。0にすると更新しません。
+auto_update_interval: 5
+
+# 移動平均線の期間（複数指定可能）
+moving_average_periods:
+  - 20
+  - 75
+  - 200

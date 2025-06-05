@@ -122,13 +122,17 @@ def main():
     )
     root.deiconify()
 
+    # --- エントリ入力エリアの作成（透明、フォント一致） ---
+    symbol_entry = tk.Entry(root, font=font)
+    symbol_entry.place_forget()
+
     # --- チャート表示エリア ---
     chart = CandleChart(
         root, rates, info_labels=info_labels, symbol_short=symbol_short, timeframe=timeframe,
         chart_x=x_pos + info_width + rate_display_width, chart_y=y_pos,
         chart_width=chart_width, chart_height=height, candle_display_count=candle_count,
         width=chart_width, height=height, bg='white', highlightthickness=0,
-        format_func=fmt
+        format_func=fmt, symbol_entry=symbol_entry
     )
     chart.place(x=info_width + rate_display_width, y=0)
 
@@ -141,10 +145,6 @@ def main():
         height=height
     )
     rate_control_canvas.place(x=info_width + rate_display_width + chart_width, y=0)
-
-    # --- エントリ入力エリアの作成（透明、フォント一致） ---
-    symbol_entry = tk.Entry(root, font=font)
-    symbol_entry.place_forget()
 
     # --- 通貨切替処理 ---
     def switch_symbol(new_short):
@@ -190,6 +190,10 @@ def main():
         ]
         for i, val in enumerate(updated_values):
             info_labels[i].config(text=val)
+
+        # 水平線を再描画        
+        chart.redraw_horizontal_lines()
+
 
     # マウス操作イベントをバインド
     bind_drag_events(rate_control_canvas, chart, rate_display_label, height, info_width, rate_display_width)
@@ -275,7 +279,9 @@ def main():
         def on_all_keys(event):
             on_key_custom(event)
             key = event.keysym
-            if key == "m":
+            if key == "h":
+                chart.toggle_horizontal_line_mode()
+            elif key == "m":
                 chart.toggle_moving_averages()
             elif key == "t":
                 chart.toggle_time_dividers()
@@ -287,6 +293,14 @@ def main():
                 if opacity[0] > 0.1:
                     opacity[0] = round(max(0.1, opacity[0] - 0.1), 1)
                     root.wm_attributes('-alpha', opacity[0])
+            elif key == "Delete":
+                if chart.selected_hline_index is not None:
+                    idx = chart.selected_hline_index
+                    chart.delete(chart.hline_ids[idx])      # 線削除
+                    del chart.hline_ids[idx]
+                    symbol = chart.symbol_short
+                    del chart.hline_data[symbol][idx]
+                    chart.hide_hline_handles()
             elif key in "123456789":
                 timeframes = ["M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"]
                 idx = int(key) - 1

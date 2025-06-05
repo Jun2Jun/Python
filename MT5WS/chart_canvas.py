@@ -8,7 +8,7 @@ from config import moving_average_periods, auto_update_interval
 class CandleChart(tk.Canvas):
     def __init__(self, master, rates, info_labels, symbol_short, timeframe,
                  chart_x, chart_y, chart_width, chart_height, candle_display_count=250,
-                 format_func=None, update_func=None, **kwargs):
+                 format_func=None, update_func=None, symbol_entry=None, **kwargs):
         super().__init__(master, **kwargs)
         self.master = master
         self.chart_x = chart_x
@@ -32,6 +32,15 @@ class CandleChart(tk.Canvas):
         self.divider_visible = False # 区切りの縦線描画状態を保持
         self.divider_lines = []  # 区切り縦線の描画IDリスト
         self.update_func = update_func # 自動更新で使用する更新関数（非同期）
+        self.hline_mode = False        # 水平線描画モードの状態
+        self.temp_hline_id = None      # 一時的な破線の水平線ID
+        self.hline_ids = []            # 確定した水平線IDのリスト
+        self.hline_data = {}  # 通貨ペアごとの価格リスト: {symbol_short: [price1, price2, ...]}
+        self.selected_hline_index = None   # 選択中の水平線インデックス
+        self.hline_handle_ids = []         # 四角形ハンドルのID
+        self.bind("<Motion>", self.on_mouse_move)
+        self.bind("<Button-1>", self.on_left_click)
+        self.symbol_entry = symbol_entry # 通貨入力エリアのインスタンス。自動更新の実施有無を判定するときに使用する。
 
         # 背景画像の初期描画とロウソク足描画
         self.update_background_image()
@@ -43,14 +52,96 @@ class CandleChart(tk.Canvas):
         if self.auto_update_interval > 0:
             self.schedule_auto_update()
     
+    # 水平線描画モード切替用メソッド
+    def toggle_horizontal_line_mode(self):
+        self.hline_mode = not self.hline_mode
+        if not self.hline_mode:
+            self.hide_temp_hline()
+
+    # 水平線の破線表示
+    def show_temp_hline(self, y):
+        if self.temp_hline_id:
+            self.delete(self.temp_hline_id)
+        self.temp_hline_id = self.create_line(0, y, self.chart_width, y, fill='black', dash=(4, 2))
+
+    # 水平線の破線削除
+    def hide_temp_hline(self):
+        if self.temp_hline_id:
+            self.delete(self.temp_hline_id)
+            self.temp_hline_id = None
+
+    # 左クリックで確定線を描画し、モード終了
+    def on_left_click(self, event):
+        if self.hline_mode:
+            y = event.y
+            price = self.y_to_price(y)
+
+            symbol = self.symbol_short
+            if symbol not in self.hline_data:
+                self.hline_data[symbol] = []
+            self.hline_data[symbol].append(price) # シンボルと価格を記録
+            
+            line_id = self.create_line(0, y, self.chart_width, y, fill='black')
+            self.hline_ids.append(line_id)
+
+            self.hline_mode = False
+            self.hide_temp_hline()
+        else:
+            # 水平線選択判定
+            y_click = event.y
+            tolerance = 5
+            height = int(self['height'])
+            display_rates = self.rates[-self.candle_display_count:]
+            highs = [r['high'] for r in display_rates]
+            lows = [r['low'] for r in display_rates]
+            max_price = max(highs)
+            min_price = min(lows)
+            price_range = max_price - min_price or 1
+
+            def price_to_y(price):
+                return height - int((price - min_price) / price_range * height)
+
+            symbol = self.symbol_short
+            prices = self.hline_data.get(symbol, [])
+            for i, price in enumerate(prices):
+                y = price_to_y(price)
+                if abs(y - y_click) <= tolerance:
+                    self.hide_hline_handles()  # 既存ハンドル削除
+                    self.selected_hline_index = i
+                    self.show_hline_handles(y)
+                    break
+            else:
+                self.hide_hline_handles()  # 選択なし
+
+    # 水平線のハンドルを描画するメソッド
+    def show_hline_handles(self, y):
+        size = 10
+        half = size // 2
+        positions = [0, self.chart_width // 2, self.chart_width]
+        for x in positions:
+            handle = self.create_rectangle(x - half, y - half, x + half, y + half, outline="black", width=1)
+            self.hline_handle_ids.append(handle)
+    
+    # 水平線のハンドルを削除するメソッド
+    def hide_hline_handles(self):
+        for hid in self.hline_handle_ids:
+            self.delete(hid)
+        self.hline_handle_ids.clear()
+        self.selected_hline_index = None
+
     # 指定間隔で auto_update をスケジュール実行
     def schedule_auto_update(self):
         self.after(self.auto_update_interval, self.auto_update)
 
     # update_func が指定されていれば定期的に呼び出して更新
     def auto_update(self):
+        # 通貨入力エリア表示中なら自動更新をスキップ
+        if hasattr(self, 'symbol_entry') and self.symbol_entry and self.symbol_entry.winfo_ismapped():
+            self.schedule_auto_update()
+            return
+
+        # update_funcが渡されてれば更新が行われる。
         if self.update_func:
-            # update_funcが渡されてれば更新が行われる。
             # main.pyで渡しているので設定した時間で更新されるようになっている。
             asyncio.run(self.update_func(self.timeframe))
         self.schedule_auto_update()
@@ -114,7 +205,9 @@ class CandleChart(tk.Canvas):
             self.itemconfig(self.bg_image_id, image=self.bg_image)
         else:
             self.bg_image_id = self.create_image(0, 0, anchor='nw', image=self.bg_image)
+        # 選択状態の保持のため水平線も含めて再描画
         self.redraw_only_candles()
+        self.redraw_horizontal_lines()
 
     # ロウソク足を描画
     def draw_candles(self):
@@ -163,6 +256,54 @@ class CandleChart(tk.Canvas):
         self.draw_candles()
         if self.ma_visible:
             self.draw_moving_averages(moving_average_periods)
+    
+    
+    def redraw_horizontal_lines(self):
+        # 現在の通貨ペアの水平線取得
+        symbol = self.symbol_short
+        prices = self.hline_data.get(symbol, [])
+
+        # 現在選択されている価格を記憶（インデックスより安定）
+        selected_price = None
+        if self.selected_hline_index is not None:
+            if 0 <= self.selected_hline_index < len(prices):
+                selected_price = prices[self.selected_hline_index]
+
+        # ハンドルのみ削除（選択インデックスは維持）
+        for hid in self.hline_handle_ids:
+            self.delete(hid)
+        self.hline_handle_ids.clear()
+
+        # 既存水平線の削除
+        for line_id in self.hline_ids:
+            self.delete(line_id)
+        self.hline_ids.clear()
+
+        if not prices:
+            self.selected_hline_index = None
+            return
+
+        # 現在のチャート高さ・価格範囲取得
+        height = int(self['height'])
+        display_rates = self.rates[-self.candle_display_count:]
+        highs = [r['high'] for r in display_rates]
+        lows = [r['low'] for r in display_rates]
+        max_price = max(highs)
+        min_price = min(lows)
+        price_range = max_price - min_price or 1
+
+        def price_to_y(price):
+            return height - int((price - min_price) / price_range * height)
+
+        # 水平線の再描画＋ハンドル復元
+        for i, price in enumerate(prices):
+            y = price_to_y(price)
+            line_id = self.create_line(0, y, self.chart_width, y, fill='black')
+            self.hline_ids.append(line_id)
+
+            if selected_price is not None and abs(price - selected_price) < 1e-8:
+                self.selected_hline_index = i
+                self.show_hline_handles(y)
 
     # チャートの表示・非表示を切り替える
     def toggle_chart_visibility(self):
@@ -225,6 +366,12 @@ class CandleChart(tk.Canvas):
 
     # マウス移動に応じて情報ラベルを更新
     def on_mouse_move(self, event):
+        if self.hline_mode:
+            # 水平線モード中は破線を表示
+            self.show_temp_hline(event.y)
+            return
+
+        # 通常モードでは情報ラベルを更新
         x = event.x
         width = int(self['width'])
         space_per_candle = self.candle_width + self.candle_gap
@@ -265,6 +412,8 @@ class CandleChart(tk.Canvas):
                 self.delete(line_id)
             self.divider_lines.clear()
             self.draw_time_dividers()
+        # timeframe切替後の描画再調整
+        self.redraw_horizontal_lines()
 
     # ダッシュライン表示
     def show_dashed_line(self, y):

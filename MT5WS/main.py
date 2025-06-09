@@ -156,9 +156,9 @@ def main():
         symbol_short = new_short.upper()
         fmt = get_format_func(symbol_short)
 
-        cache_key = f"{symbol}_{timeframe}"
+        cache_key = f"{symbol}_{chart.timeframe}"
         if cache_key not in cached_data:
-            cached_data[cache_key] = fetch_rates_sync(symbol, timeframe, required_candle_count)
+            cached_data[cache_key] = fetch_rates_sync(symbol, chart.timeframe, required_candle_count)
         rates = cached_data[cache_key][-required_candle_count:]
 
         chart.rates = rates
@@ -182,7 +182,7 @@ def main():
         dt = datetime.fromtimestamp(latest["time"], tz=timezone.utc)
         time_str = dt.strftime("%Y.%m.%d %H:%M")
         updated_values = [
-            symbol_short, timeframe, time_str,
+            symbol_short, chart.timeframe, time_str,
             fmt(latest['open']),
             fmt(latest['high']),
             fmt(latest['low']),
@@ -193,7 +193,8 @@ def main():
 
         # 水平線を再描画        
         chart.redraw_horizontal_lines()
-
+        # 斜め線を再描画
+        chart.redraw_diagonal_lines()
 
     # マウス操作イベントをバインド
     bind_drag_events(rate_control_canvas, chart, rate_display_label, height, info_width, rate_display_width)
@@ -281,6 +282,8 @@ def main():
             key = event.keysym
             if key == "h":
                 chart.toggle_horizontal_line_mode()
+            elif key == "d":
+                chart.toggle_diagonal_line_mode()
             elif key == "m":
                 chart.toggle_moving_averages()
             elif key == "t":

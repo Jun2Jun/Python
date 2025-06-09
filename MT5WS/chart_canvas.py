@@ -24,28 +24,38 @@ class CandleChart(tk.Canvas):
         self.bg_image_id = None
         self.bg_image = None
         self.dashed_line_id = None
-        self.chart_visible = True  # チャートの表示状態を保持
-        self.ma_visible = False    # 移動平均線の表示状態を保持
-        self.ma_lines = []         # 移動平均線IDリスト
+        self.chart_visible = True  # チャートの表示状態
+        self.ma_visible = False    # 移動平均線の表示状態
+        self.ma_lines = []         # 移動平均線の描画ID保持
         self.format_func = format_func or (lambda v: f"{v:.3f}")
         self.candle_display_count = candle_display_count
-        self.divider_visible = False # 区切りの縦線描画状態を保持
-        self.divider_lines = []  # 区切り縦線の描画IDリスト
-        self.update_func = update_func # 自動更新で使用する更新関数（非同期）
-        self.hline_mode = False        # 水平線描画モードの状態
-        self.temp_hline_id = None      # 一時的な破線の水平線ID
-        self.hline_ids = []            # 確定した水平線IDのリスト
-        self.hline_data = {}  # 通貨ペアごとの価格リスト: {symbol_short: [price1, price2, ...]}
-        self.selected_hline_index = None   # 選択中の水平線インデックス
-        self.hline_handle_ids = []         # 四角形ハンドルのID
+        self.divider_visible = False  # 区切り線の表示状態
+        self.divider_lines = []       # 区切り線ID保持
+        self.update_func = update_func  # 自動更新関数
+
+        # 水平線描画関連
+        self.hline_mode = False
+        self.temp_hline_id = None
+        self.hline_ids = []
+        self.hline_data = {}  # 通貨ごとの水平線価格リスト
+        self.selected_hline_index = None
+        self.hline_handle_ids = []
+
+        # 斜め線描画関連
+        self.diagonal_mode = False
+        self.diagonal_start = None
+        self.temp_diagonal_id = None
+        self.diagonal_line_ids = []
+        self.diagonal_data = []  # (symbol, t1, price1, t2, price2)
+
+        # マウス操作をバインド
         self.bind("<Motion>", self.on_mouse_move)
         self.bind("<Button-1>", self.on_left_click)
-        self.symbol_entry = symbol_entry # 通貨入力エリアのインスタンス。自動更新の実施有無を判定するときに使用する。
+        self.symbol_entry = symbol_entry
 
         # 背景画像の初期描画とロウソク足描画
         self.update_background_image()
         self.draw_candles()
-        self.bind("<Motion>", self.on_mouse_move)
 
         # 自動更新の設定（ミリ秒単位）
         self.auto_update_interval = auto_update_interval * 1000  # 自動更新間隔（ミリ秒）
@@ -69,25 +79,57 @@ class CandleChart(tk.Canvas):
         if self.temp_hline_id:
             self.delete(self.temp_hline_id)
             self.temp_hline_id = None
-
-    # 左クリックで確定線を描画し、モード終了
-    def on_left_click(self, event):
+    
+     # 斜め線モード切替（水平線モード解除も含む）
+    def toggle_diagonal_line_mode(self):
+        self.diagonal_mode = not self.diagonal_mode
+        self.diagonal_start = None
+        if self.temp_diagonal_id:
+            self.delete(self.temp_diagonal_id)
+            self.temp_diagonal_id = None
         if self.hline_mode:
+            self.hline_mode = False
+            self.hide_temp_hline()
+
+    # 左クリック時の処理（斜め線・水平線の描画や選択）
+    def on_left_click(self, event):
+        if self.diagonal_mode:
+            if self.diagonal_start is None:
+                price1 = self.y_to_price(event.y)
+                index = self.get_index_from_x(event.x)
+                t1 = self.rates[index]['time']
+                self.diagonal_start = (t1, price1)
+            else:
+                t1, price1 = self.diagonal_start
+                price2 = self.y_to_price(event.y)
+                index = self.get_index_from_x(event.x)
+                t2 = self.rates[index]['time']
+                x1 = self.get_x_from_time(t1)
+                x2 = self.get_x_from_time(t2)
+                y1 = self.price_to_y(price1)
+                y2 = self.price_to_y(price2)
+                if x1 is not None and x2 is not None:
+                    line_id = self.create_line(x1, y1, x2, y2, fill='black')
+                    self.diagonal_line_ids.append(line_id)
+                    symbol = self.symbol_short
+                    self.diagonal_data.append((symbol, t1, price1, t2, price2))
+                    self.diagonal_mode = False
+                if self.temp_diagonal_id:
+                    self.delete(self.temp_diagonal_id)
+                    self.temp_diagonal_id = None
+        elif self.hline_mode:
             y = event.y
             price = self.y_to_price(y)
-
             symbol = self.symbol_short
             if symbol not in self.hline_data:
                 self.hline_data[symbol] = []
-            self.hline_data[symbol].append(price) # シンボルと価格を記録
-            
+            self.hline_data[symbol].append(price)
             line_id = self.create_line(0, y, self.chart_width, y, fill='black')
             self.hline_ids.append(line_id)
-
             self.hline_mode = False
             self.hide_temp_hline()
         else:
-            # 水平線選択判定
+            # 水平線の選択処理
             y_click = event.y
             tolerance = 5
             height = int(self['height'])
@@ -106,12 +148,12 @@ class CandleChart(tk.Canvas):
             for i, price in enumerate(prices):
                 y = price_to_y(price)
                 if abs(y - y_click) <= tolerance:
-                    self.hide_hline_handles()  # 既存ハンドル削除
+                    self.hide_hline_handles()
                     self.selected_hline_index = i
                     self.show_hline_handles(y)
                     break
             else:
-                self.hide_hline_handles()  # 選択なし
+                self.hide_hline_handles() # 選択なし
 
     # 水平線のハンドルを描画するメソッド
     def show_hline_handles(self, y):
@@ -257,7 +299,7 @@ class CandleChart(tk.Canvas):
         if self.ma_visible:
             self.draw_moving_averages(moving_average_periods)
     
-    
+    # 水平線の再描画
     def redraw_horizontal_lines(self):
         # 現在の通貨ペアの水平線取得
         symbol = self.symbol_short
@@ -304,6 +346,24 @@ class CandleChart(tk.Canvas):
             if selected_price is not None and abs(price - selected_price) < 1e-8:
                 self.selected_hline_index = i
                 self.show_hline_handles(y)
+
+    # 斜め線の再描画（通貨ペア変更や更新時）
+    def redraw_diagonal_lines(self):
+        for line_id in self.diagonal_line_ids:
+            self.delete(line_id)
+        self.diagonal_line_ids.clear()
+
+        symbol = self.symbol_short
+        for s, t1, price1, t2, price2 in self.diagonal_data:
+            if s != symbol:
+                continue
+            x1 = self.get_x_from_time(t1)
+            x2 = self.get_x_from_time(t2)
+            y1 = self.price_to_y(price1)
+            y2 = self.price_to_y(price2)
+            if x1 is not None and x2 is not None:
+                line_id = self.create_line(x1, y1, x2, y2, fill='black')
+                self.diagonal_line_ids.append(line_id)
 
     # チャートの表示・非表示を切り替える
     def toggle_chart_visibility(self):
@@ -366,9 +426,23 @@ class CandleChart(tk.Canvas):
 
     # マウス移動に応じて情報ラベルを更新
     def on_mouse_move(self, event):
+        # 水平線モード中は破線を表示
         if self.hline_mode:
-            # 水平線モード中は破線を表示
             self.show_temp_hline(event.y)
+            return
+        
+        # 斜め線モード中は破線を表示
+        if self.diagonal_mode and self.diagonal_start:
+            t1, price1 = self.diagonal_start
+            x1 = self.get_x_from_time(t1)
+            if x1 is None:
+                return
+            y1 = self.price_to_y(price1)
+            x2 = event.x
+            y2 = event.y
+            if self.temp_diagonal_id:
+                self.delete(self.temp_diagonal_id)
+            self.temp_diagonal_id = self.create_line(x1, y1, x2, y2, fill='black', dash=(4, 2))
             return
 
         # 通常モードでは情報ラベルを更新
@@ -392,6 +466,35 @@ class CandleChart(tk.Canvas):
             ]
             for i, val in enumerate(updated_values):
                 self.info_labels[i].config(text=val)
+    
+    # x座標からIndexを取得する
+    def get_index_from_x(self, x):
+        space = self.candle_width + self.candle_gap
+        width = int(self['width'])
+        index = len(self.rates) - (width - x) // space - 1
+        return max(0, min(len(self.rates) - 1, index))
+
+    # timeからx座標を取得する
+    def get_x_from_time(self, t):
+        space = self.candle_width + self.candle_gap
+        times = [r['time'] for r in self.rates[-self.candle_display_count:]]
+        if not times:
+            return None
+        closest_index = min(range(len(times)), key=lambda i: abs(times[i] - t))
+        i = closest_index
+        return int(self['width']) - (len(times) - i) * space + self.candle_width // 2
+
+    # 価格からy座標に変換    
+    def price_to_y(self, price):
+        height = int(self['height'])
+        display_rates = self.rates[-self.candle_display_count:]
+        highs = [r['high'] for r in display_rates]
+        lows = [r['low'] for r in display_rates]
+        max_price = max(highs)
+        min_price = min(lows)
+        price_range = max_price - min_price or 1
+        return height - int((price - min_price) / price_range * height)
+
 
     # 新しいレートデータで更新
     def update_rates(self, new_rates, new_timeframe):
@@ -402,7 +505,7 @@ class CandleChart(tk.Canvas):
         for line_id in self.ma_lines:
             self.delete(line_id)
         self.ma_lines.clear()
-        self.update_background_image()
+        # self.update_background_image()
         # ma_visible が True の場合、移動平均線を再描画
         if self.ma_visible:
             self.draw_moving_averages(moving_average_periods)
@@ -414,6 +517,7 @@ class CandleChart(tk.Canvas):
             self.draw_time_dividers()
         # timeframe切替後の描画再調整
         self.redraw_horizontal_lines()
+        self.redraw_diagonal_lines()
 
     # ダッシュライン表示
     def show_dashed_line(self, y):

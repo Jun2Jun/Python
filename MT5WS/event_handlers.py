@@ -1,5 +1,4 @@
-import asyncio
-from datetime import datetime, timezone
+from utils import take_full_screenshot
 
 # レート操作エリアでドラッグされたときの処理をバインド
 def bind_drag_events(canvas, chart, label, height, info_width, rate_display_width):
@@ -39,10 +38,18 @@ def bind_drag_window_events(root, chart, rate_control_canvas, config):
         y = root.winfo_y()
         chart.chart_x = x + config['info_width'] + config['rate_display_width']
         chart.chart_y = y
-        chart.update_background_image()
-        rate_control_canvas.chart_x = x + config['info_width'] + config['rate_display_width'] + config['chart_width']
-        rate_control_canvas.chart_y = y
-        rate_control_canvas.update_background_image()
-        root.focus_force()
 
+        # レート操作キャンバスの位置も更新
+        rate_control_canvas.chart_x = chart.chart_x + config['chart_width']
+        rate_control_canvas.chart_y = y
+
+        # スクリーンショットを取得
+        screenshot = take_full_screenshot()
+        
+        # 各キャンバスに crop 済みの画像を渡す
+        chart.update_background_image(screenshot)
+        rate_control_canvas.update_background_image(screenshot)
+
+        root.focus_force()
+    
     return start_move, on_drag, on_release

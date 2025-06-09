@@ -1,9 +1,8 @@
 import tkinter as tk
 from datetime import datetime, timezone
-from PIL import ImageTk
-import pyautogui
 import asyncio
 from config import moving_average_periods, auto_update_interval
+from utils import get_cropped_screenshot_from_image, take_full_screenshot
 
 class CandleChart(tk.Canvas):
     def __init__(self, master, rates, info_labels, symbol_short, timeframe,
@@ -132,21 +131,11 @@ class CandleChart(tk.Canvas):
             # 水平線の選択処理
             y_click = event.y
             tolerance = 5
-            height = int(self['height'])
-            display_rates = self.rates[-self.candle_display_count:]
-            highs = [r['high'] for r in display_rates]
-            lows = [r['low'] for r in display_rates]
-            max_price = max(highs)
-            min_price = min(lows)
-            price_range = max_price - min_price or 1
-
-            def price_to_y(price):
-                return height - int((price - min_price) / price_range * height)
 
             symbol = self.symbol_short
             prices = self.hline_data.get(symbol, [])
             for i, price in enumerate(prices):
-                y = price_to_y(price)
+                y = self.price_to_y(price)
                 if abs(y - y_click) <= tolerance:
                     self.hide_hline_handles()
                     self.selected_hline_index = i
@@ -231,57 +220,48 @@ class CandleChart(tk.Canvas):
             prev_key = key
 
     # 背景画像を取得・表示
-    def update_background_image(self):
+    def update_background_image(self, full_screenshot=None):
+        if full_screenshot is None:
+            full_screenshot = take_full_screenshot()
+
         self.master.withdraw()
         self.master.update()
-        screenshot = pyautogui.screenshot()
-        crop = screenshot.crop((
+
+        self.bg_image = get_cropped_screenshot_from_image(
+            full_screenshot,
             self.chart_x, self.chart_y,
-            self.chart_x + self.chart_width,
-            self.chart_y + self.chart_height
-        ))
-        self.bg_image = ImageTk.PhotoImage(crop)
+            self.chart_width, self.chart_height
+        )
         self.master.deiconify()
 
-        if self.bg_image_id:
-            self.itemconfig(self.bg_image_id, image=self.bg_image)
-        else:
-            self.bg_image_id = self.create_image(0, 0, anchor='nw', image=self.bg_image)
+        # if self.bg_image_id:
+        #     self.itemconfig(self.bg_image_id, image=self.bg_image)
+        # else:
+        #     self.bg_image_id = self.create_image(0, 0, anchor='nw', image=self.bg_image)
+
+        # 既存のすべてをクリアしてから背景＋再描画
+        self.delete("all")  # ← キャンバス上の全アイテムを削除
+        self.bg_image_id = self.create_image(0, 0, anchor='nw', image=self.bg_image)
+        
         # 選択状態の保持のため水平線も含めて再描画
         self.redraw_only_candles()
         self.redraw_horizontal_lines()
+        self.redraw_diagonal_lines()
 
     # ロウソク足を描画
     def draw_candles(self):
         if not self.chart_visible:  # チャート非表示なら描画しない
             return
-        
-        height = int(self['height'])
         width = int(self['width'])
-
-        display_rates = self.rates[-self.candle_display_count:]  # 表示する250本
-        highs = [r['high'] for r in display_rates]
-        lows = [r['low'] for r in display_rates]
-        max_price = max(highs)
-        min_price = min(lows)
-
-        # highs = [r['high'] for r in self.rates]
-        # lows = [r['low'] for r in self.rates]
-        # max_price = max(highs)
-        # min_price = min(lows)
-        price_range = max_price - min_price or 1
-
         space_per_candle = self.candle_width + self.candle_gap
+        display_rates = self.rates[-self.candle_display_count:]
 
-        def price_to_y(price):
-            return height - int((price - min_price) / price_range * height)
-
-        for i, r in enumerate(self.rates):
-            x = width - (len(self.rates) - i) * space_per_candle
-            open_y = price_to_y(r['open'])
-            close_y = price_to_y(r['close'])
-            high_y = price_to_y(r['high'])
-            low_y = price_to_y(r['low'])
+        for i, r in enumerate(display_rates):
+            x = width - (len(display_rates) - i) * space_per_candle
+            open_y = self.price_to_y(r['open'])
+            close_y = self.price_to_y(r['close'])
+            high_y = self.price_to_y(r['high'])
+            low_y = self.price_to_y(r['low'])
             body_top = min(open_y, close_y)
             body_bottom = max(open_y, close_y)
 
@@ -325,21 +305,9 @@ class CandleChart(tk.Canvas):
             self.selected_hline_index = None
             return
 
-        # 現在のチャート高さ・価格範囲取得
-        height = int(self['height'])
-        display_rates = self.rates[-self.candle_display_count:]
-        highs = [r['high'] for r in display_rates]
-        lows = [r['low'] for r in display_rates]
-        max_price = max(highs)
-        min_price = min(lows)
-        price_range = max_price - min_price or 1
-
-        def price_to_y(price):
-            return height - int((price - min_price) / price_range * height)
-
         # 水平線の再描画＋ハンドル復元
         for i, price in enumerate(prices):
-            y = price_to_y(price)
+            y = self.price_to_y(price)
             line_id = self.create_line(0, y, self.chart_width, y, fill='black')
             self.hline_ids.append(line_id)
 
@@ -382,47 +350,27 @@ class CandleChart(tk.Canvas):
     # 移動平均線を描画
     def draw_moving_averages(self, periods):
         import statistics
-
-        height = int(self['height'])
         width = int(self['width'])
-        highs = [r['high'] for r in self.rates]
-        lows = [r['low'] for r in self.rates]
-        max_price = max(highs)
-        min_price = min(lows)
-        price_range = max_price - min_price or 1
         space_per_candle = self.candle_width + self.candle_gap
-
-        def price_to_y(price):
-            return height - int((price - min_price) / price_range * height)
-
         closes = [r['close'] for r in self.rates]
 
+        # periodごとの移動平均を計算
         for period in periods:
             if len(closes) < period:
                 continue
             ma_points = []
+            # 移動平均を計算
             for i in range(period - 1, len(closes)):
                 avg = statistics.mean(closes[i - period + 1:i + 1])
                 x = width - (len(closes) - i) * space_per_candle
-                y = price_to_y(avg)
+                y = self.price_to_y(avg)
                 ma_points.append((x, y))
-
+            # 座標に変換
             for i in range(1, len(ma_points)):
                 x1, y1 = ma_points[i - 1]
                 x2, y2 = ma_points[i]
                 line_id = self.create_line(x1, y1, x2, y2, fill='black', width=1, tags='ma')
                 self.ma_lines.append(line_id)
-
-    # Y座標を価格に変換
-    def y_to_price(self, y):
-        height = int(self['height'])
-        display_rates = self.rates[-self.candle_display_count:]
-        highs = [r['high'] for r in display_rates]
-        lows = [r['low'] for r in display_rates]
-        max_price = max(highs)
-        min_price = min(lows)
-        price_range = max_price - min_price or 1
-        return min_price + (height - y) / height * price_range
 
     # マウス移動に応じて情報ラベルを更新
     def on_mouse_move(self, event):
@@ -484,40 +432,32 @@ class CandleChart(tk.Canvas):
         i = closest_index
         return int(self['width']) - (len(times) - i) * space + self.candle_width // 2
 
+    # Y座標を価格に変換
+    def y_to_price(self, y):
+        height = int(self['height'])
+        min_price, _, price_range = self.get_price_bounds()
+        return min_price + (height - y) / height * price_range
+    
     # 価格からy座標に変換    
     def price_to_y(self, price):
         height = int(self['height'])
+        min_price, _, price_range = self.get_price_bounds() 
+        return height - int((price - min_price) / price_range * height)
+
+    # チャートの最大値と最小値、レンジを取得する関数
+    def get_price_bounds(self):
         display_rates = self.rates[-self.candle_display_count:]
         highs = [r['high'] for r in display_rates]
         lows = [r['low'] for r in display_rates]
-        max_price = max(highs)
         min_price = min(lows)
-        price_range = max_price - min_price or 1
-        return height - int((price - min_price) / price_range * height)
-
+        max_price = max(highs)
+        return min_price, max_price, max_price - min_price or 1
 
     # 新しいレートデータで更新
     def update_rates(self, new_rates, new_timeframe):
         self.rates = new_rates
         self.timeframe = new_timeframe
-        self.update_background_image()
-        # timeframe切替時に古い移動平均線を削除
-        for line_id in self.ma_lines:
-            self.delete(line_id)
-        self.ma_lines.clear()
-        # self.update_background_image()
-        # ma_visible が True の場合、移動平均線を再描画
-        if self.ma_visible:
-            self.draw_moving_averages(moving_average_periods)
-        # 区切り縦線の表示状態に応じて再描画
-        if self.divider_visible:
-            for line_id in self.divider_lines:
-                self.delete(line_id)
-            self.divider_lines.clear()
-            self.draw_time_dividers()
-        # timeframe切替後の描画再調整
-        self.redraw_horizontal_lines()
-        self.redraw_diagonal_lines()
+        self.refresh_chart(update_timeframe=True)
 
     # ダッシュライン表示
     def show_dashed_line(self, y):
@@ -530,3 +470,31 @@ class CandleChart(tk.Canvas):
         if self.dashed_line_id:
             self.delete(self.dashed_line_id)
             self.dashed_line_id = None
+    
+    # チャートの再描画
+    def refresh_chart(self, update_timeframe=False):
+        # 背景更新
+        self.update_background_image()
+
+        # 移動平均線の削除
+        for line_id in self.ma_lines:
+            self.delete(line_id)
+        self.ma_lines.clear()
+
+        # 移動平均線の再描画
+        if self.ma_visible:
+            self.draw_moving_averages(moving_average_periods)
+
+        # 区切り線の再描画（timeframe更新時のみ）
+        if update_timeframe and self.divider_visible:
+            for line_id in self.divider_lines:
+                self.delete(line_id)
+            self.divider_lines.clear()
+            self.draw_time_dividers()
+
+        # 水平線・斜め線を再描画
+        self.redraw_horizontal_lines()
+        self.redraw_diagonal_lines()
+
+        # ロウソク足のみ再描画（表示中であれば）
+        self.redraw_only_candles()

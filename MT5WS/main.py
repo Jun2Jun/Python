@@ -114,12 +114,8 @@ def main():
     rate_display_label = tk.Label(root, text="", font=font, bg='white', anchor="e")
     rate_display_label.place(x=info_width, y=5, width=rate_display_width)
 
-    # 背景取得用にスクリーンショットを撮影
     root.withdraw()
     root.update()
-    screenshot = ImageTk.PhotoImage(
-        pyautogui.screenshot().crop((x_pos + info_width + rate_display_width, y_pos, x_pos + info_width + rate_display_width + chart_width, y_pos + height))
-    )
     root.deiconify()
 
     # --- エントリ入力エリアの作成（透明、フォント一致） ---
@@ -170,31 +166,8 @@ def main():
             chart.delete(line_id)
         chart.ma_lines.clear()
 
-        chart.update_background_image()
-        chart.redraw_only_candles()
-
-        # --- ma_visible が True なら再描画 ---
-        if chart.ma_visible:
-            chart.draw_moving_averages(moving_average_periods)
-
-        # --- ラベル更新 ---
-        latest = rates[-1]
-        dt = datetime.fromtimestamp(latest["time"], tz=timezone.utc)
-        time_str = dt.strftime("%Y.%m.%d %H:%M")
-        updated_values = [
-            symbol_short, chart.timeframe, time_str,
-            fmt(latest['open']),
-            fmt(latest['high']),
-            fmt(latest['low']),
-            fmt(latest['close']),
-        ]
-        for i, val in enumerate(updated_values):
-            info_labels[i].config(text=val)
-
-        # 水平線を再描画        
-        chart.redraw_horizontal_lines()
-        # 斜め線を再描画
-        chart.redraw_diagonal_lines()
+        # チャートのリフレッシュ
+        chart.refresh_chart()
 
     # マウス操作イベントをバインド
     bind_drag_events(rate_control_canvas, chart, rate_display_label, height, info_width, rate_display_width)

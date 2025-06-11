@@ -221,26 +221,23 @@ class CandleChart(tk.Canvas):
 
     # 背景画像を取得・表示
     def update_background_image(self, full_screenshot=None):
+        self.master.withdraw() # Tkinterのウィンドウを一時的に非表示
+        self.master.update() # 画面の状態を更新して完全に非表示に反映
+
+        # 自ウィンドウを含まないようにスクリーンショットの取得
         if full_screenshot is None:
             full_screenshot = take_full_screenshot()
 
-        self.master.withdraw()
-        self.master.update()
-
+        # スクリーンショットの切り取り
         self.bg_image = get_cropped_screenshot_from_image(
             full_screenshot,
             self.chart_x, self.chart_y,
             self.chart_width, self.chart_height
         )
-        self.master.deiconify()
-
-        # if self.bg_image_id:
-        #     self.itemconfig(self.bg_image_id, image=self.bg_image)
-        # else:
-        #     self.bg_image_id = self.create_image(0, 0, anchor='nw', image=self.bg_image)
+        self.master.deiconify() # 非表示を解除
 
         # 既存のすべてをクリアしてから背景＋再描画
-        self.delete("all")  # ← キャンバス上の全アイテムを削除
+        self.delete("all")  # キャンバス上の全アイテムを削除
         self.bg_image_id = self.create_image(0, 0, anchor='nw', image=self.bg_image)
         
         # 選択状態の保持のため水平線も含めて再描画

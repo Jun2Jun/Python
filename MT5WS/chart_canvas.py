@@ -32,6 +32,9 @@ class CandleChart(tk.Canvas):
         self.divider_lines = []       # 区切り線ID保持
         self.update_func = update_func  # 自動更新関数
 
+        # フラグ
+        self.hline_editing = False  # 水平線編集中フラグ
+
         # 水平線描画関連
         self.hline_mode = False
         self.temp_hline_id = None
@@ -39,6 +42,7 @@ class CandleChart(tk.Canvas):
         self.hline_data = {}  # 通貨ごとの水平線価格リスト
         self.selected_hline_index = None
         self.hline_handle_ids = []
+        self.hline_styles = {} # 水平線の属性リスト
 
         # 斜め線描画関連
         self.diagonal_mode = False
@@ -50,6 +54,7 @@ class CandleChart(tk.Canvas):
         # マウス操作をバインド
         self.bind("<Motion>", self.on_mouse_move)
         self.bind("<Button-1>", self.on_left_click)
+        self.bind("<Button-3>", self.on_right_click)
         self.symbol_entry = symbol_entry
 
         # 背景画像の初期描画とロウソク足描画
@@ -123,8 +128,9 @@ class CandleChart(tk.Canvas):
             if symbol not in self.hline_data:
                 self.hline_data[symbol] = []
             self.hline_data[symbol].append(price)
-            line_id = self.create_line(0, y, self.chart_width, y, fill='black')
-            self.hline_ids.append(line_id)
+            line_id = self.create_line(0, y, self.chart_width, y, fill='black', width=1) # 水平線を作成
+            self.hline_ids.append(line_id) # 水平線リストに追加
+            self.hline_styles[(symbol, len(self.hline_ids) - 1)] = {"color": "black", "width": 1} # 属性をリストにキャッシュ
             self.hline_mode = False
             self.hide_temp_hline()
         else:
@@ -143,6 +149,57 @@ class CandleChart(tk.Canvas):
                     break
             else:
                 self.hide_hline_handles() # 選択なし
+
+    # 右クリック時の処理（水平線の属性設定）
+    def on_right_click(self, event):
+        if self.selected_hline_index is None:
+            return
+
+        import tkinter as tk
+        from tkinter import colorchooser
+
+        self.hline_editing = True  # 編集中フラグON
+
+        symbol = self.symbol_short
+        index = self.selected_hline_index
+        style_key = (symbol, index)
+        current_style = self.hline_styles.get(style_key, {"color": "black", "width": 1})
+        
+        dialog = tk.Toplevel(self)
+        dialog.overrideredirect(True)  # タイトルバー・枠を非表示
+        dialog.geometry("+%d+%d" % (event.x_root, event.y_root))
+        dialog.resizable(False, False)
+        dialog.transient(self.master)  # チャートを親に
+        dialog.grab_set()              # モーダルに
+        dialog.focus_set()            # フォーカスを与える
+
+        # カラー選択
+        def pick_color():
+            color = colorchooser.askcolor(title="色を選択", initialcolor=current_style["color"])
+            if color[1]:
+                current_style["color"] = color[1]
+                color_label.config(bg=color[1])
+
+        tk.Label(dialog, text="色:").grid(row=0, column=0, padx=5, pady=5)
+        color_label = tk.Label(dialog, bg=current_style["color"], width=10)
+        color_label.grid(row=0, column=1, padx=5)
+        tk.Button(dialog, text="変更", command=pick_color).grid(row=0, column=2, padx=5)
+
+        tk.Label(dialog, text="太さ:").grid(row=1, column=0, padx=5, pady=5)
+        width_var = tk.IntVar(value=current_style["width"])
+        spinbox = tk.Spinbox(dialog, from_=1, to=10, textvariable=width_var, width=5)
+        spinbox.grid(row=1, column=1, columnspan=2, padx=5)
+
+        def apply_changes():
+            self.hline_styles[style_key] = current_style
+            self.redraw_horizontal_lines()
+            self.hline_editing = False  # 編集終了でフラグOFF
+            dialog.destroy()
+
+        tk.Button(dialog, text="OK", command=apply_changes).grid(row=2, column=0, columnspan=4, pady=5)
+
+        # xボタンは表示してないが、閉じる操作が発生した場合の安全措置
+        dialog.protocol("WM_DELETE_WINDOW", lambda: (setattr(self, "hline_editing", False), dialog.destroy()))
 
     # 水平線のハンドルを描画するメソッド
     def show_hline_handles(self, y):
@@ -166,10 +223,14 @@ class CandleChart(tk.Canvas):
 
     # update_func が指定されていれば定期的に呼び出して更新
     def auto_update(self):
-        # 通貨入力エリア表示中なら自動更新をスキップ
-        if hasattr(self, 'symbol_entry') and self.symbol_entry and self.symbol_entry.winfo_ismapped():
+        # 編集ダイアログ or 通貨入力エリア表示中はスキップ
+        if (hasattr(self, 'symbol_entry') and self.symbol_entry and self.symbol_entry.winfo_ismapped()) or self.hline_editing:
             self.schedule_auto_update()
             return
+        
+        if self.update_func:
+            asyncio.run(self.update_func(self.timeframe))
+        self.schedule_auto_update()
 
         # update_funcが渡されてれば更新が行われる。
         if self.update_func:
@@ -305,7 +366,9 @@ class CandleChart(tk.Canvas):
         # 水平線の再描画＋ハンドル復元
         for i, price in enumerate(prices):
             y = self.price_to_y(price)
-            line_id = self.create_line(0, y, self.chart_width, y, fill='black')
+            style = self.hline_styles.get((symbol, i), {"color": "black", "width": 1})
+            line_id = self.create_line(0, y, self.chart_width, y, fill=style["color"], width=style["width"])
+            # line_id = self.create_line(0, y, self.chart_width, y, fill='black')
             self.hline_ids.append(line_id)
 
             if selected_price is not None and abs(price - selected_price) < 1e-8:

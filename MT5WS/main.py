@@ -132,6 +132,11 @@ def main():
     )
     chart.place(x=info_width + rate_display_width, y=0)
 
+    chart.load_all_line_data() # ラインの読み込み
+    chart.apply_line_data_to_chart(symbol) # ラインの反映
+    chart.redraw_horizontal_lines() # 水平線の再描画
+    chart.redraw_diagonal_lines() # 斜め線の再描画
+
     # --- レート操作エリア（チャートの右） ---
     rate_control_canvas = RateControlCanvas(
         root,
@@ -165,6 +170,9 @@ def main():
         for line_id in chart.ma_lines:
             chart.delete(line_id)
         chart.ma_lines.clear()
+
+        # ラインの反映
+        chart.apply_line_data_to_chart(symbol)
 
         # チャートのリフレッシュ
         chart.refresh_chart()
@@ -276,18 +284,28 @@ def main():
                     del chart.hline_ids[idx]
                     symbol = chart.symbol_short
                     del chart.hline_data[symbol][idx]
-                    chart.hide_hline_handles()
-            elif key in "123456789":
+                    chart.hide_hline_handles() # 水平線のハンドル削除
+                    chart.update_line_data_cache(chart.symbol_short) # キャッシュにライン情報を保存
+            elif key in "123456789": # タイムフレームの切り替え
                 timeframes = ["M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"]
                 idx = int(key) - 1
                 if idx < len(timeframes):
                     asyncio.run(update_timeframe(timeframes[idx]))
+            elif key == "Escape": # プログラムの終了
+                on_close()
 
         root.bind("<Key>", on_all_keys)
 
     bind_custom_keys()
 
     root.focus_force() # メインループ前にrootに強制的にフォーカスをセット
+
+    # 終了時の処理
+    def on_close():
+        chart.save_all_line_data()
+        root.destroy()
+
+    root.protocol("WM_DELETE_WINDOW", on_close)
 
     # メインループ開始
     root.mainloop()

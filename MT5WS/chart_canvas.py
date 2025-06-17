@@ -1,10 +1,14 @@
 import tkinter as tk
 from datetime import datetime, timezone
 import asyncio
+import json
+import os
 from config import moving_average_periods, auto_update_interval
 from utils import get_cropped_screenshot_from_image, take_full_screenshot
 
 class CandleChart(tk.Canvas):
+    LINE_DATA_PATH = "line_data.json" # ラインデータの保存パス
+
     def __init__(self, master, rates, info_labels, symbol_short, timeframe,
                  chart_x, chart_y, chart_width, chart_height, candle_display_count=250,
                  format_func=None, update_func=None, symbol_entry=None, **kwargs):
@@ -26,6 +30,7 @@ class CandleChart(tk.Canvas):
         self.chart_visible = True  # チャートの表示状態
         self.ma_visible = False    # 移動平均線の表示状態
         self.ma_lines = []         # 移動平均線の描画ID保持
+        self.line_data_cache = {} # ライン情報のキャッシュ
         self.format_func = format_func or (lambda v: f"{v:.3f}")
         self.candle_display_count = candle_display_count
         self.divider_visible = False  # 区切り線の表示状態
@@ -133,6 +138,7 @@ class CandleChart(tk.Canvas):
             self.hline_styles[(symbol, len(self.hline_ids) - 1)] = {"color": "black", "width": 1} # 属性をリストにキャッシュ
             self.hline_mode = False
             self.hide_temp_hline()
+            self.update_line_data_cache(self.symbol_short) # キャッシュにライン情報を保存
         else:
             # 水平線の選択処理
             y_click = event.y
@@ -166,12 +172,14 @@ class CandleChart(tk.Canvas):
         current_style = self.hline_styles.get(style_key, {"color": "black", "width": 1})
         
         dialog = tk.Toplevel(self)
-        dialog.overrideredirect(True)  # タイトルバー・枠を非表示
-        dialog.geometry("+%d+%d" % (event.x_root, event.y_root))
-        dialog.resizable(False, False)
-        dialog.transient(self.master)  # チャートを親に
-        dialog.grab_set()              # モーダルに
-        dialog.focus_set()            # フォーカスを与える
+        dialog.title("")  # タイトルバーの文字を消す
+        dialog.resizable(False, False) # サイズ変更なし
+        dialog.transient(self.master)     # チャートを親に
+        dialog.grab_set()                 # モーダルに
+        dialog.focus_set() # フォーカスをセット
+
+        # Windowsならこのスタイルで枠が小さくなる（macOS/Linuxでは無視される可能性あり）
+        dialog.wm_attributes("-toolwindow", True)
 
         # カラー選択
         def pick_color():
@@ -190,13 +198,33 @@ class CandleChart(tk.Canvas):
         spinbox = tk.Spinbox(dialog, from_=1, to=10, textvariable=width_var, width=5)
         spinbox.grid(row=1, column=1, columnspan=2, padx=5)
 
+        # "OK"を押下したときの処理
         def apply_changes():
-            self.hline_styles[style_key] = current_style
-            self.redraw_horizontal_lines()
+            current_style["width"] = width_var.get() # 太さを設定
+            self.hline_styles[style_key] = current_style # スタイルを設定
+            self.redraw_horizontal_lines() # 水平線を再描画
             self.hline_editing = False  # 編集終了でフラグOFF
             dialog.destroy()
+            self.update_line_data_cache(self.symbol_short) # キャッシュにライン情報を保存
 
+        # "OK"ボタンの見た目と動作設定
         tk.Button(dialog, text="OK", command=apply_changes).grid(row=2, column=0, columnspan=4, pady=5)
+
+        # サイズ確定
+        dialog.update_idletasks()
+        dialog_width = dialog.winfo_width()
+
+        # メインウィンドウ内に表示
+        master_x = self.master.winfo_rootx()
+        master_y = self.master.winfo_rooty()
+        master_width = self.master.winfo_width()
+
+        # メインウィンドウ右上から少し内側に
+        x_pos = master_x + master_width - dialog_width - 10
+        y_pos = master_y + 10
+
+        # 編集画面の位置を確定
+        dialog.geometry(f"+{x_pos}+{y_pos}")
 
         # xボタンは表示してないが、閉じる操作が発生した場合の安全措置
         dialog.protocol("WM_DELETE_WINDOW", lambda: (setattr(self, "hline_editing", False), dialog.destroy()))
@@ -227,10 +255,6 @@ class CandleChart(tk.Canvas):
         if (hasattr(self, 'symbol_entry') and self.symbol_entry and self.symbol_entry.winfo_ismapped()) or self.hline_editing:
             self.schedule_auto_update()
             return
-        
-        if self.update_func:
-            asyncio.run(self.update_func(self.timeframe))
-        self.schedule_auto_update()
 
         # update_funcが渡されてれば更新が行われる。
         if self.update_func:
@@ -558,3 +582,107 @@ class CandleChart(tk.Canvas):
 
         # ロウソク足のみ再描画（表示中であれば）
         self.redraw_only_candles()
+
+    # ラインの保存処理
+    def save_line_data(self):
+        symbol = self.symbol_short
+
+        # --- 水平線データを構造化 ---
+        hlines = []
+        prices = self.hline_data.get(symbol, [])
+        for i, price in enumerate(prices):
+            style = self.hline_styles.get((symbol, i), {"color": "#000000", "width": 1})
+            hlines.append({
+                "price": price,
+                "color": style.get("color", "#000000"),
+                "width": style.get("width", 1)
+            })
+
+        # --- 斜め線データを構造化 ---
+        dlines = []
+        for s, t1, p1, t2, p2 in self.diagonal_data:
+            if s != symbol:
+                continue
+            dlines.append({
+                "t1": t1, "p1": p1,
+                "t2": t2, "p2": p2,
+                "color": "#000000",  # 今は固定（後で拡張可）
+                "width": 1
+            })
+
+        # --- 全体データ構築 ---
+        new_entry = {
+            symbol: {
+                "horizontal": hlines,
+                "diagonal": dlines
+            }
+        }
+
+        try:
+            if os.path.exists(self.LINE_DATA_PATH):
+                with open(self.LINE_DATA_PATH, "r", encoding="utf-8") as f:
+                    all_data = json.load(f)
+            else:
+                all_data = {}
+
+            all_data.update(new_entry)
+
+            with open(self.LINE_DATA_PATH, "w", encoding="utf-8") as f:
+                json.dump(all_data, f, indent=2)
+        except Exception as e:
+            print(f"[保存失敗] {e}")
+    
+    # ラインの読み込み処理
+    def load_all_line_data(self):
+        if not os.path.exists(self.LINE_DATA_PATH):
+            return
+        try:
+            with open(self.LINE_DATA_PATH, "r", encoding="utf-8") as f:
+                self.line_data_cache = json.load(f)
+        except Exception as e:
+            print(f"[読み込み失敗] {e}")
+    
+    # symbolで指定したラインを適用する処理
+    def apply_line_data_to_chart(self, symbol):
+        self.symbol_short = symbol
+        self.hline_data[symbol] = []
+        self.hline_styles = {k: v for k, v in self.hline_styles.items() if k[0] != symbol}
+        self.diagonal_data = []
+
+        data = self.line_data_cache.get(symbol)
+        if not data:
+            return
+
+        for i, h in enumerate(data.get("horizontal", [])):
+            self.hline_data[symbol].append(h["price"])
+            self.hline_styles[(symbol, i)] = {
+                "color": h.get("color", "#000000"),
+                "width": h.get("width", 1)
+            }
+        for d in data.get("diagonal", []):
+            self.diagonal_data.append((symbol, d["t1"], d["p1"], d["t2"], d["p2"]))
+    
+    # symbolで指定したラインをキャッシュする処理
+    def update_line_data_cache(self, symbol):
+        hlines = []
+        for i, price in enumerate(self.hline_data.get(symbol, [])):
+            style = self.hline_styles.get((symbol, i), {"color": "#000000", "width": 1})
+            hlines.append({"price": price, "color": style["color"], "width": style["width"]})
+
+        dlines = []
+        for s, t1, p1, t2, p2 in self.diagonal_data:
+            if s == symbol:
+                dlines.append({"t1": t1, "p1": p1, "t2": t2, "p2": p2, "color": "#000000", "width": 1})
+
+        self.line_data_cache[symbol] = {
+            "horizontal": hlines,
+            "diagonal": dlines
+        }
+    
+    # キャッシュしているラインの保存処理
+    def save_all_line_data(self):
+        try:
+            with open(self.LINE_DATA_PATH, "w", encoding="utf-8") as f:
+                json.dump(self.line_data_cache, f, indent=2)
+        except Exception as e:
+            print(f"[保存失敗] {e}")

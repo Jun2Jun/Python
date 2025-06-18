@@ -278,14 +278,38 @@ def main():
                     opacity[0] = round(max(0.1, opacity[0] - 0.1), 1)
                     root.wm_attributes('-alpha', opacity[0])
             elif key == "Delete":
+                symbol = chart.symbol_short
+                # 水平線が選択されている場合
                 if chart.selected_hline_index is not None:
                     idx = chart.selected_hline_index
                     chart.delete(chart.hline_ids[idx])      # 線削除
                     del chart.hline_ids[idx]
-                    symbol = chart.symbol_short
                     del chart.hline_data[symbol][idx]
-                    chart.hide_hline_handles() # 水平線のハンドル削除
-                    chart.update_line_data_cache(chart.symbol_short) # キャッシュにライン情報を保存
+                    # スタイルも削除
+                    chart.hline_styles = {
+                        (s, i if i < idx else i - 1): style
+                        for (s, i), style in chart.hline_styles.items()
+                        if s == symbol and i != idx
+                    }
+                    chart.hide_hline_handles()
+                    chart.selected_hline_index = None
+                    chart.update_line_data_cache(symbol)
+
+                # 斜め線が選択されている場合
+                elif chart.selected_diagonal_index is not None:
+                    idx = chart.selected_diagonal_index
+                    chart.delete(chart.diagonal_line_ids[idx])  # 線削除
+                    del chart.diagonal_line_ids[idx]
+                    del chart.diagonal_data[idx]
+                    # スタイルも削除
+                    chart.diagonal_styles = {
+                        (s, i if i < idx else i - 1): style
+                        for (s, i), style in chart.diagonal_styles.items()
+                        if s == symbol and i != idx
+                    }
+                    chart.hide_diagonal_handles()
+                    chart.selected_diagonal_index = None
+                    chart.update_line_data_cache(symbol)
             elif key in "123456789": # タイムフレームの切り替え
                 timeframes = ["M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"]
                 idx = int(key) - 1

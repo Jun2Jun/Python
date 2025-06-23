@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import asyncio
 import json
 import os
-from config import moving_average_periods, auto_update_interval
+from config import moving_average_periods, moving_average_colors, auto_update_interval
 from utils import get_cropped_screenshot_from_image, take_full_screenshot
 
 class CandleChart(tk.Canvas):
@@ -39,7 +39,8 @@ class CandleChart(tk.Canvas):
         self.update_func = update_func  # 自動更新関数
 
         # フラグ
-        self.hline_editing = False  # 水平線編集中フラグ
+        self.hline_editing = False  # ラインの編集中フラグ
+        self.settings_editing = False  # 設定画面編集中フラグ
 
         # 水平線描画関連
         self.hline_mode = False
@@ -57,6 +58,10 @@ class CandleChart(tk.Canvas):
         self.diagonal_line_ids = []
         self.diagonal_data = []  # (symbol, t1, price1, t2, price2)
 
+        # 移動平均線関連
+        self.ma_periods = moving_average_periods
+        self.ma_colors = moving_average_colors
+
         # マウス操作をバインド
         self.bind("<Motion>", self.on_mouse_move)
         self.bind("<Button-1>", self.on_left_click)
@@ -72,6 +77,14 @@ class CandleChart(tk.Canvas):
         if self.auto_update_interval > 0:
             self.schedule_auto_update()
     
+    # 移動平均線の設定
+    def set_moving_average_config(self, periods, colors):
+        self.ma_periods = periods
+        self.ma_colors = colors
+        if self.ma_visible:
+            self.toggle_moving_averages()  # 一旦消して
+            self.toggle_moving_averages()  # 再描画
+
     # 水平線描画モード切替用メソッド
     def toggle_horizontal_line_mode(self):
         self.hline_mode = not self.hline_mode
@@ -325,7 +338,7 @@ class CandleChart(tk.Canvas):
     # update_func が指定されていれば定期的に呼び出して更新
     def auto_update(self):
         # 編集ダイアログ or 通貨入力エリア表示中はスキップ
-        if (hasattr(self, 'symbol_entry') and self.symbol_entry and self.symbol_entry.winfo_ismapped()) or self.hline_editing:
+        if (hasattr(self, 'symbol_entry') and self.symbol_entry and self.symbol_entry.winfo_ismapped()) or self.hline_editing or self.settings_editing:
             self.schedule_auto_update()
             return
 
@@ -511,9 +524,10 @@ class CandleChart(tk.Canvas):
         width = int(self['width'])
         space_per_candle = self.candle_width + self.candle_gap
         closes = [r['close'] for r in self.rates]
+        periods = periods or self.ma_periods
 
         # periodごとの移動平均を計算
-        for period in periods:
+        for idx, period in enumerate(self.ma_periods):
             if len(closes) < period:
                 continue
             ma_points = []
@@ -527,7 +541,7 @@ class CandleChart(tk.Canvas):
             for i in range(1, len(ma_points)):
                 x1, y1 = ma_points[i - 1]
                 x2, y2 = ma_points[i]
-                line_id = self.create_line(x1, y1, x2, y2, fill='black', width=1, tags='ma')
+                line_id = self.create_line(x1, y1, x2, y2, fill=self.ma_colors[idx], width=1, tags='ma')
                 self.ma_lines.append(line_id)
 
     # マウス移動に応じて情報ラベルを更新

@@ -2,14 +2,16 @@ import asyncio
 import tkinter as tk
 import tkinter.font as tkFont
 import tkinter.simpledialog
-from datetime import datetime, timezone
-from PIL import ImageTk
+import os
 import pyautogui
 
 from chart_canvas import CandleChart
 from config import moving_average_periods
+from datetime import datetime, timezone
 from rate_control_canvas import RateControlCanvas
 from event_handlers import bind_drag_events, bind_drag_window_events
+from PIL import ImageTk
+from ruamel.yaml import YAML
 from ws_client import MT5WebSocketClient
 
 # --- 通貨コード → 正式通貨ペアへのマッピング ---
@@ -267,6 +269,8 @@ def main():
                 chart.toggle_diagonal_line_mode()
             elif key == "m":
                 chart.toggle_moving_averages()
+            elif key == "s":
+                show_settings_dialog()
             elif key == "t":
                 chart.toggle_time_dividers()
             elif key == "Up":
@@ -323,6 +327,261 @@ def main():
     bind_custom_keys()
 
     root.focus_force() # メインループ前にrootに強制的にフォーカスをセット
+
+    def show_settings_dialog():
+        import tkinter as tk
+        from tkinter import colorchooser
+        from ruamel.yaml import YAML
+        import os
+
+        chart.settings_editing = True
+        dialog = tk.Toplevel(root)
+        dialog.title("設定")
+        dialog.resizable(False, False)
+        dialog.transient(root)
+        dialog.grab_set()
+
+        # 全体レイアウト（左：カテゴリ、右：内容）
+        container = tk.Frame(dialog)
+        container.pack(fill="both", expand=True)
+
+        left_frame = tk.Frame(container)
+        left_frame.pack(side="left", fill="y", padx=10, pady=10)
+
+        right_frame = tk.Frame(container)
+        right_frame.pack(side="right", fill="both", expand=True, padx=10, pady=10)
+
+        content_frames = {}
+
+        def show_content(name):
+            for k, f in content_frames.items():
+                f.pack_forget()
+            content_frames[name].pack(fill="both", expand=True)
+
+        # --- 左メニュー（カテゴリ） ---
+        # for name in ["Moving Average", "Horizon Line", "Trend Line"]:
+        #     b = tk.Button(left_frame, text=name, width=15, anchor="w", command=lambda n=name: show_content(n))
+        #     b.pack(fill="x", pady=2)
+
+        # Moving Average（現在の設定を移植）
+        ma_frame = tk.Frame(right_frame)
+        content_frames["Moving Average"] = ma_frame
+
+        # 他も空で構わない
+        content_frames["Horizon Line"] = tk.Frame(right_frame)
+        content_frames["Trend Line"] = tk.Frame(right_frame)
+
+        # 左メニュー：モダン風ボタンで切替
+        menu_items = ["Moving Average", "Horizon Line", "Trend Line"]
+        selected_menu = tk.StringVar(value=menu_items[0])  # 選択状態の保持
+
+        button_refs = {}
+
+        def update_menu_buttons(selected_name):
+            selected_menu.set(selected_name)
+            for name, btn in button_refs.items():
+                if name == selected_name:
+                    btn.config(bg="#007acc", fg="white", font=("Helvetica", 10, "bold"))
+                else:
+                    btn.config(bg="#f0f0f0", fg="#333333", font=("Helvetica", 10))
+
+            show_content(selected_name)
+
+        for name in menu_items:
+            btn = tk.Button(
+                left_frame,
+                text=name,
+                anchor="w",
+                width=16,
+                padx=10,
+                pady=5,
+                bg="#f0f0f0",
+                fg="#333333",
+                activebackground="#cce6ff",
+                relief="flat",
+                bd=0,
+                highlightthickness=0,
+                command=lambda n=name: update_menu_buttons(n)
+            )
+            btn.pack(fill="x", pady=2)
+            button_refs[name] = btn
+
+        update_menu_buttons("Moving Average")  # 初期表示
+
+        
+        # 左側メニューを Listbox に変更
+        # import tkinter.font as tkFont
+
+        # menu_items = ["Moving Average", "Horizon Line", "Trend Line"]
+
+        # # カスタムフォントとListbox定義
+        # list_font = tkFont.Font(size=10, weight="bold")
+        # menu_listbox = tk.Listbox(
+        #     left_frame,
+        #     font=list_font,
+        #     height=len(menu_items),
+        #     bg="#f8f8f8",
+        #     fg="#333333",
+        #     selectbackground="#007acc",  # 選択時の背景色（青系）
+        #     selectforeground="white",    # 選択時の文字色
+        #     bd=0,
+        #     relief="flat",
+        #     highlightthickness=0,s
+        #     exportselection=False
+        # )
+
+        # for item in menu_items:
+        #     menu_listbox.insert("end", item)
+        # menu_listbox.pack(fill="both", expand=False, pady=5)
+
+        # def on_menu_select(event):
+        #     selection = menu_listbox.curselection()
+        #     if selection:
+        #         selected_name = menu_listbox.get(selection[0])
+        #         show_content(selected_name)
+
+        # menu_listbox.bind("<<ListboxSelect>>", on_menu_select)
+        # menu_listbox.selection_set(0)  # 初期選択
+
+        period_vars = [tk.IntVar(value=p) for p in chart.ma_periods]
+        color_vars = [tk.StringVar(value=c) for c in chart.ma_colors]
+        color_buttons = [None] * 3
+
+        def choose_color(i, btn, var):
+            c = colorchooser.askcolor(title="色を選択", initialcolor=var.get())
+            if c[1]:
+                var.set(c[1])
+                btn.config(bg=c[1])
+
+        labels = ["短期", "中期", "長期"]
+        for i in range(3):
+            tk.Label(ma_frame, text=f"{labels[i]}期間:").grid(row=i, column=0, padx=5, pady=5)
+            tk.Spinbox(ma_frame, from_=1, to=500, textvariable=period_vars[i], width=5).grid(row=i, column=1)
+            btn = tk.Button(ma_frame, text="色", bg=color_vars[i].get(), width=6)
+            btn.config(command=lambda i=i, b=btn, v=color_vars[i]: choose_color(i, b, v))
+            btn.grid(row=i, column=2)
+            color_buttons[i] = btn
+
+        # --- Horizon Line / Trend Line用の空枠（後で実装） ---
+        content_frames["Horizon Line"] = tk.Frame(right_frame)
+        content_frames["Trend Line"] = tk.Frame(right_frame)
+
+        # --- OKボタンと表示処理 ---
+        def apply():
+            new_periods = [v.get() for v in period_vars]
+            new_colors = [v.get() for v in color_vars]
+            chart.set_moving_average_config(new_periods, new_colors)
+
+            # 保存処理
+            yaml = YAML()
+            yaml.preserve_quotes = True
+            path = "settings.yaml"
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    data = yaml.load(f)
+            else:
+                data = {}
+            data["moving_average_periods"] = new_periods
+            data["moving_average_colors"] = new_colors
+            with open(path, "w", encoding="utf-8") as f:
+                yaml.dump(data, f)
+
+            chart.settings_editing = False
+            dialog.destroy()
+
+        tk.Button(dialog, text="OK", command=apply).pack(pady=5)
+
+        # 初期表示
+        show_content("Moving Average")
+
+        # ダイアログ位置
+        dialog.update_idletasks()
+        w, h = dialog.winfo_width(), dialog.winfo_height()
+        x = root.winfo_rootx() + root.winfo_width() - w - 10
+        y = root.winfo_rooty() + 10
+        dialog.geometry(f"+{x}+{y}")
+
+    # def show_settings_dialog():
+    #     import tkinter as tk
+    #     from tkinter import colorchooser, simpledialog
+
+    #     chart.settings_editing = True  # 編集中フラグON
+
+    #     dialog = tk.Toplevel(root)
+    #     dialog.title("移動平均線の設定")
+    #     dialog.resizable(False, False)
+    #     dialog.transient(root)
+    #     dialog.grab_set()
+
+    #     periods = moving_average_periods.copy()
+    #     period_vars = [tk.IntVar(value=p) for p in periods]
+    #     colors = chart.ma_colors[:]
+    #     color_vars = [tk.StringVar(value=color) for color in colors]
+    #     color_buttons = [None] * 3
+
+    #     def choose_color(i, btn, var):
+    #         c = colorchooser.askcolor(title="色を選択", initialcolor=var.get())
+    #         if c[1]:
+    #             color_vars[i].set(c[1])
+    #             color_buttons[i].config(bg=c[1])
+
+    #     labels = ["短期", "中期", "長期"]
+    #     for i in range(3):
+    #         tk.Label(dialog, text=f"{labels[i]}期間:").grid(row=i, column=0, padx=5, pady=5)
+    #         tk.Spinbox(dialog, from_=1, to=500, textvariable=period_vars[i], width=5).grid(row=i, column=1)
+    #         btn = tk.Button(dialog, text="", bg=color_vars[i].get(), width=3)
+    #         btn.config(command=lambda i=i, b=btn, v=color_vars[i]: choose_color(i, b, v))
+    #         btn.grid(row=i, column=2)
+    #         color_buttons[i] = btn
+
+    #     def apply():
+    #         new_periods = [v.get() for v in period_vars]
+    #         new_colors = [v.get() for v in color_vars]
+    #         chart.set_moving_average_config(new_periods, new_colors)
+
+    #         # 設定を ruamel.yaml で保存（コメント保持）
+    #         yaml = YAML()
+    #         yaml.preserve_quotes = True
+    #         settings_path = "settings.yaml"
+
+    #         # ファイルが存在すれば読み込み、なければ空で
+    #         if os.path.exists(settings_path):
+    #             with open(settings_path, "r", encoding="utf-8") as f:
+    #                 settings_data = yaml.load(f)
+    #         else:
+    #             settings_data = {}
+
+    #         settings_data["moving_average_colors"] = new_colors
+
+    #         with open(settings_path, "w", encoding="utf-8") as f:
+    #             yaml.dump(settings_data, f)
+
+    #         chart.settings_editing = False  # 編集完了フラグOFF
+    #         dialog.destroy()
+        
+    #     def on_close():
+    #         chart.settings_editing = False  # 閉じた場合もOFF
+    #         dialog.destroy()
+
+    #     dialog.protocol("WM_DELETE_WINDOW", on_close)
+    #     tk.Button(dialog, text="OK", command=apply).grid(row=4, column=0, columnspan=4, pady=10)
+
+    #     # サイズ確定
+    #     dialog.update_idletasks()
+    #     dialog_width = dialog.winfo_width()
+    #     dialog_height = dialog.winfo_height()
+
+    #     # 親ウィンドウ(root)の位置とサイズを取得
+    #     root_x = root.winfo_rootx()
+    #     root_y = root.winfo_rooty()
+    #     root_width = root.winfo_width()
+
+    #     # アプリの右上にオフセットして表示
+    #     x_pos = root_x + root_width - dialog_width - 10
+    #     y_pos = root_y + 10
+
+    #     # ダイアログの位置を指定
+    #     dialog.geometry(f"+{x_pos}+{y_pos}")
 
     # 終了時の処理
     def on_close():

@@ -1,11 +1,15 @@
 # チャートの自動更新間隔（秒）。0にすると更新しません。
 auto_update_interval: 5
 
+# MT5 WebSocketサーバの接続先URI
+websocket_uri: "ws://172.29.98.144:8765"
+
 # 移動平均線の期間（複数指定可能）
 moving_average_periods:
-  - 20
-  - 75
-  - 200
-
-# WebソケットサーバのURI
-websocket_uri: "ws://192.168.1.43:8765"
+- 20
+- 75
+- 200
+moving_average_colors:
+- '#000000'
+- '#00ff00'
+- '#ff0000'

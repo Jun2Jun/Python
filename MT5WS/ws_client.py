@@ -1,10 +1,11 @@
 import asyncio
 import json
 import websockets
+from config import websocket_uri
 
 # MT5 WebSocket サーバと通信するクライアントクラス
 class MT5WebSocketClient:
-    def __init__(self, uri="ws://192.168.1.39:8765"):
+    def __init__(self, uri=websocket_uri):
         # WebSocket サーバのURIを初期化
         self.uri = uri
 

@@ -1,0 +1,22 @@
+{
+    // IntelliSense を使用して利用可能な属性を学べます。
+    // 既存の属性の説明をホバーして表示します。
+    // 詳細情報は次を確認してください: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+
+        {
+            "name": "Debug Dukascopy → ForexTester6",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/convert_dukascopy_to_forextester6.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--mt4-tz", "Europe/Athens",
+                "--date-format", "%Y.%m.%d",
+                "--time-format", "%H:%M"
+            ],
+            "justMyCode": true
+        }
+    ]
+}

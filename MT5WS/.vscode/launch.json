@@ -1,0 +1,28 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug WebSocket Server",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/mt5_ws_server.py",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Debug Chart Client",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "console": "integratedTerminal"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Debug Server + Client",
+      "configurations": [
+        "Debug WebSocket Server",
+        "Debug Chart Client"
+      ]
+    }
+  ]
+}
